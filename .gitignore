@@ -1,3 +1,10 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+
 # Logs
 logs
 *.log
@@ -7,10 +14,13 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Brain data (user-specific, lives outside the repo)
+brain.json
+
+# Environment / local overrides
 *.local
+.env
+.env.*
 
 # Editor directories and files
 .vscode/*
