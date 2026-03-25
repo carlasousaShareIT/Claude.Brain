@@ -1,5 +1,8 @@
 // routes/memory.js — core memory CRUD, search, context, and utility endpoints
 
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { Router } from "express";
 import { loadBrain, saveBrain } from "../brain-store.js";
 import { toEntry, entryText, normalizeProject, getEntryProjects, filterByProject } from "../entry-utils.js";
@@ -133,26 +136,34 @@ router.get("/memory/sessions", (req, res) => {
   const brain = loadBrain();
   const sessions = {};
 
-  const track = (sessionId, createdAt, section) => {
+  const track = (sessionId, createdAt, section, entryProjects) => {
     if (!sessionId) return;
-    if (!sessions[sessionId]) sessions[sessionId] = { id: sessionId, count: 0, sections: {}, earliest: createdAt, latest: createdAt };
+    if (!sessions[sessionId]) sessions[sessionId] = { id: sessionId, count: 0, sections: {}, projects: new Set(), earliest: createdAt, latest: createdAt };
     const s = sessions[sessionId];
     s.count++;
     s.sections[section] = (s.sections[section] || 0) + 1;
     if (createdAt && createdAt < s.earliest) s.earliest = createdAt;
     if (createdAt && createdAt > s.latest) s.latest = createdAt;
+    if (entryProjects) entryProjects.forEach(p => s.projects.add(p));
   };
 
   for (const section of ["workingStyle", "architecture", "agentRules"]) {
     for (const entry of (brain[section] || [])) {
-      if (typeof entry === "object") track(entry.sessionId, entry.createdAt, section);
+      if (typeof entry === "object") track(entry.sessionId, entry.createdAt, section, entry.project);
     }
   }
   for (const entry of (brain.decisions || [])) {
-    if (typeof entry === "object") track(entry.sessionId, entry.createdAt, "decisions");
+    if (typeof entry === "object") track(entry.sessionId, entry.createdAt, "decisions", entry.project);
   }
 
-  res.json(Object.values(sessions).sort((a, b) => (b.latest || "").localeCompare(a.latest || "")));
+  const result = Object.values(sessions).map(s => {
+    let label = null;
+    try {
+      label = fs.readFileSync(path.join(os.homedir(), ".claude", "sessions", s.id + ".label"), "utf8").trim();
+    } catch { /* no label file */ }
+    return { ...s, label, projects: [...s.projects] };
+  });
+  res.json(result.sort((a, b) => (b.latest || "").localeCompare(a.latest || "")));
 });
 
 // GET /memory/log — recent updates
@@ -249,6 +260,46 @@ router.post("/memory/confidence", (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /memory/health — check brain entries for stale file references
+router.post("/memory/health", (req, res) => {
+  const { repoPath } = req.body;
+  if (!repoPath) return res.status(400).json({ error: "Missing repoPath" });
+
+  const brain = loadBrain();
+  const pathRegex = /(?:^|\s|['"`])((?:src|components|hooks|server|routes|lib|services|modules|app|pages|utils|assets|styles|models|shared|features|core|config|public)\/[\w\/\-\.]+\.\w+)/gi;
+
+  const staleEntries = [];
+  const healthyEntries = [];
+  let checkedEntries = 0;
+  let noReferencesEntries = 0;
+
+  const checkSection = (entries, section) => {
+    for (const entry of entries) {
+      const text = entryText(entry);
+      const matches = [...text.matchAll(pathRegex)];
+      if (matches.length === 0) {
+        noReferencesEntries++;
+        continue;
+      }
+      checkedEntries++;
+      const references = matches.map(m => {
+        const p = m[1];
+        const fullPath = path.join(repoPath, p);
+        return { path: p, exists: fs.existsSync(fullPath) };
+      });
+      const hasStale = references.some(r => !r.exists);
+      (hasStale ? staleEntries : healthyEntries).push({ section, text, references });
+    }
+  };
+
+  for (const section of ["workingStyle", "architecture", "agentRules"]) {
+    checkSection(brain[section] || [], section);
+  }
+  checkSection((brain.decisions || []).map(d => ({ ...d, text: d.decision || entryText(d) })), "decisions");
+
+  res.json({ checkedEntries, staleEntries, healthyEntries, noReferencesEntries });
+});
+
 // GET /memory/context — compact markdown for LLM context injection
 // Supports ?project=<id> for project-scoped context
 // Supports ?mission=<id> for mission-scoped context (auto-resolves project + appends mission tasks)
@@ -269,11 +320,28 @@ router.get("/memory/context", (req, res) => {
     }
   }
 
+  // Profile-based filtering
+  const profileId = req.query.profile || "";
+  let profileFilter = null;
+  if (profileId) {
+    profileFilter = (rawBrain.profiles || []).find(p => p.id === profileId);
+    if (!profileFilter) {
+      return res.status(404).setHeader("Content-Type", "text/markdown").send(`Profile not found: ${profileId}`);
+    }
+    // Profile's project takes precedence if set
+    if (profileFilter.project && !projectId) {
+      projectId = profileFilter.project;
+    }
+  }
+
   const brain = projectId ? filterByProject(rawBrain, projectId) : rawBrain;
   const lines = [];
   if (mission) {
     const proj = projectId ? (rawBrain.projects || []).find(p => p.id === projectId) : null;
     lines.push(`# Brain Context — Mission: ${mission.name}${proj ? ` (${proj.name})` : ""}`);
+    lines.push("");
+  } else if (profileFilter) {
+    lines.push(`# Brain Context — Profile: ${profileFilter.name}`);
     lines.push("");
   } else if (projectId) {
     const proj = (rawBrain.projects || []).find(p => p.id === projectId);
@@ -309,8 +377,16 @@ router.get("/memory/context", (req, res) => {
     return hasActiveProject;
   });
 
-  if ((brain.workingStyle || []).length) {
-    const active = sortByConfidence(filterActive(brain.workingStyle));
+  const filterByProfile = (entries) => {
+    if (!profileFilter || !profileFilter.tags || profileFilter.tags.length === 0) return entries;
+    return entries.filter(e => {
+      const text = entryText(e).toLowerCase();
+      return profileFilter.tags.some(tag => text.includes(tag.toLowerCase()));
+    });
+  };
+
+  if ((brain.workingStyle || []).length && (!profileFilter || profileFilter.sections.includes("workingStyle"))) {
+    const active = sortByConfidence(filterByProfile(filterActive(brain.workingStyle)));
     if (active.length) {
       lines.push("## Working Style");
       active.forEach(e => lines.push(formatEntry(e)));
@@ -318,8 +394,8 @@ router.get("/memory/context", (req, res) => {
     }
   }
 
-  if ((brain.architecture || []).length) {
-    const active = sortByConfidence(filterActive(brain.architecture));
+  if ((brain.architecture || []).length && (!profileFilter || profileFilter.sections.includes("architecture"))) {
+    const active = sortByConfidence(filterByProfile(filterActive(brain.architecture)));
     if (active.length) {
       lines.push("## Architecture");
       active.forEach(e => lines.push(formatEntry(e)));
@@ -327,8 +403,8 @@ router.get("/memory/context", (req, res) => {
     }
   }
 
-  if ((brain.agentRules || []).length) {
-    const active = sortByConfidence(filterActive(brain.agentRules));
+  if ((brain.agentRules || []).length && (!profileFilter || profileFilter.sections.includes("agentRules"))) {
+    const active = sortByConfidence(filterByProfile(filterActive(brain.agentRules)));
     if (active.length) {
       lines.push("## Agent Rules");
       active.forEach(e => lines.push(formatEntry(e)));
@@ -336,7 +412,9 @@ router.get("/memory/context", (req, res) => {
     }
   }
 
-  const activeDecisions = filterActive(brain.decisions || []);
+  const activeDecisions = (!profileFilter || profileFilter.sections.includes("decisions"))
+    ? filterByProfile(filterActive(brain.decisions || []))
+    : [];
   const openDecisions = activeDecisions.filter(d => d.status !== "resolved");
   const resolvedDecisions = activeDecisions.filter(d => d.status === "resolved");
 

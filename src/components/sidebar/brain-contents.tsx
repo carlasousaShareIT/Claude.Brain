@@ -14,6 +14,7 @@ interface TaggedEntry {
 export function BrainContents() {
   const activeFilter = useUIStore((s) => s.activeFilter)
   const activeProject = useUIStore((s) => s.activeProject)
+  const sessionFilterId = useUIStore((s) => s.sessionFilterId)
   const { data: brain, isLoading } = useBrain(activeProject || undefined)
   const { data: archived } = useArchived()
 
@@ -21,9 +22,11 @@ export function BrainContents() {
     if (activeFilter === 'archived') return []
     if (!brain) return []
 
-    const filterByProject = <T extends { project: string[] }>(items: T[]) => {
-      if (!activeProject) return items
-      return items.filter((e) => e.project.includes(activeProject))
+    const filterByProject = <T extends { project: string[]; sessionId?: string | null }>(items: T[]) => {
+      let result = items
+      if (activeProject) result = result.filter((e) => e.project.includes(activeProject))
+      if (sessionFilterId) result = result.filter((e) => e.sessionId === sessionFilterId)
+      return result
     }
 
     if (activeFilter === 'all') {
@@ -53,7 +56,7 @@ export function BrainContents() {
     }
 
     return []
-  }, [brain, activeFilter, activeProject])
+  }, [brain, activeFilter, activeProject, sessionFilterId])
 
   const archivedEntries = useMemo(() => {
     if (activeFilter !== 'archived') return []

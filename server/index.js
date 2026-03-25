@@ -18,6 +18,7 @@ import annotationsRouter from "./routes/annotations.js";
 import metricsRouter from "./routes/metrics.js";
 import webhooksRouter from "./routes/webhooks.js";
 import projectsRouter from "./routes/projects.js";
+import profilesRouter from "./routes/profiles.js";
 import missionsRouter from "./routes/missions.js";
 import sseRouter from "./routes/sse.js";
 
@@ -58,6 +59,7 @@ app.use(annotationsRouter);
 app.use(metricsRouter);
 app.use(webhooksRouter);
 app.use(projectsRouter);
+app.use(profilesRouter);
 app.use(sseRouter);
 app.use("/missions", missionsRouter);
 

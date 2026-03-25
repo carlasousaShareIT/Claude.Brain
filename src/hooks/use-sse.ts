@@ -26,6 +26,9 @@ export function useSSE() {
         queryClient.invalidateQueries({ queryKey: ['brain'] });
         queryClient.invalidateQueries({ queryKey: ['missions'] });
         queryClient.invalidateQueries({ queryKey: ['archived'] });
+        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        queryClient.invalidateQueries({ queryKey: ['agents'] });
+        queryClient.invalidateQueries({ queryKey: ['profiles'] });
       };
 
       es.onerror = () => {

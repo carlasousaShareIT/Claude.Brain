@@ -13,6 +13,10 @@ import type {
   MissionSummary,
   ResumableMission,
   SectionName,
+  SessionSummary,
+  HealthReport,
+  AgentSummary,
+  ContextProfile,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -86,7 +90,7 @@ export const api = {
       `/memory/search${qs({ q, project })}`,
     ),
 
-  getSessions: () => apiFetch<string[]>('/memory/sessions'),
+  getSessions: () => apiFetch<SessionSummary[]>('/memory/sessions'),
 
   getLog: () => apiFetch<LogEntry[]>('/memory/log'),
 
@@ -214,6 +218,25 @@ export const api = {
       method: 'PATCH',
       body: body as unknown as BodyInit,
     }),
+
+  // Health
+  checkHealth: (body: { repoPath?: string }) =>
+    apiFetch<HealthReport>('/memory/health', { method: 'POST', body: body as unknown as BodyInit }),
+
+  // Agents
+  getAgents: () => apiFetch<AgentSummary[]>('/missions/agents'),
+
+  // Profiles
+  getProfiles: () => apiFetch<ContextProfile[]>('/memory/profiles'),
+
+  createProfile: (body: { name: string; taskType: string; sections: SectionName[]; tags: string[]; project?: string | null }) =>
+    apiFetch<ContextProfile>('/memory/profiles', { method: 'POST', body: body as unknown as BodyInit }),
+
+  updateProfile: (id: string, body: Partial<{ name: string; taskType: string; sections: SectionName[]; tags: string[]; project: string | null }>) =>
+    apiFetch<ContextProfile>(`/memory/profiles/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
+
+  deleteProfile: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/memory/profiles/${id}`, { method: 'DELETE' }),
 };
 
 export { ApiError };

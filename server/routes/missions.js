@@ -92,6 +92,57 @@ router.get("/resume", (req, res) => {
   res.json({ missions: results });
 });
 
+// GET /missions/agents — agent execution stats
+router.get("/agents", (req, res) => {
+  const brain = loadBrain();
+  const agentMap = {};
+
+  for (const m of (brain.missions || [])) {
+    for (const t of (m.tasks || [])) {
+      if (!t.assignedAgent) continue;
+      const name = t.assignedAgent;
+      if (!agentMap[name]) {
+        agentMap[name] = { name, taskCount: 0, completedCount: 0, failedCount: 0, blockedCount: 0, inProgressCount: 0, totalDurationMs: 0, durationTasks: 0, lastUsed: null, recentTasks: [] };
+      }
+      const a = agentMap[name];
+      a.taskCount++;
+      if (t.status === "completed") a.completedCount++;
+      if (t.status === "blocked") a.blockedCount++;
+      if (t.status === "in_progress") a.inProgressCount++;
+
+      // Duration calc
+      if (t.startedAt && t.completedAt) {
+        const dur = new Date(t.completedAt).getTime() - new Date(t.startedAt).getTime();
+        if (dur > 0) { a.totalDurationMs += dur; a.durationTasks++; }
+      }
+
+      // Track lastUsed
+      const taskTime = t.completedAt || t.startedAt || t.createdAt;
+      if (taskTime && (!a.lastUsed || taskTime > a.lastUsed)) a.lastUsed = taskTime;
+
+      a.recentTasks.push({
+        id: t.id,
+        description: t.description,
+        status: t.status,
+        output: t.output,
+        missionId: m.id,
+        missionName: m.name,
+        startedAt: t.startedAt,
+        completedAt: t.completedAt,
+      });
+    }
+  }
+
+  const result = Object.values(agentMap).map(a => ({
+    ...a,
+    avgDurationMs: a.durationTasks > 0 ? Math.round(a.totalDurationMs / a.durationTasks) : 0,
+    recentTasks: a.recentTasks.sort((x, y) => (y.completedAt || y.startedAt || "").localeCompare(x.completedAt || x.startedAt || "")).slice(0, 10),
+  }));
+  // Remove internal fields
+  result.forEach(a => { delete a.totalDurationMs; delete a.durationTasks; });
+  res.json(result.sort((a, b) => (b.lastUsed || "").localeCompare(a.lastUsed || "")));
+});
+
 // GET /missions — list missions
 router.get("/", (req, res) => {
   const statusFilter = req.query.status || "";

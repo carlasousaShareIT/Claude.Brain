@@ -2,6 +2,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
 import { SidebarHeader } from '@/components/sidebar/sidebar-header'
 import { FilterList } from '@/components/sidebar/filter-list'
+import { ProfilesPanel } from '@/components/sidebar/profiles-panel'
 import { BrainContents } from '@/components/sidebar/brain-contents'
 import { SidebarFooter } from '@/components/sidebar/sidebar-footer'
 
@@ -12,6 +13,8 @@ export function Sidebar() {
         <SidebarHeader />
         <Separator className="bg-brain-surface" />
         <FilterList />
+        <Separator className="bg-brain-surface" />
+        <ProfilesPanel />
         <Separator className="bg-brain-surface" />
         <BrainContents />
         <SidebarFooter />

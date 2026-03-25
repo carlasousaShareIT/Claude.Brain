@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,8 @@ interface MissionCardProps {
 
 export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: MissionCardProps) {
   const [copiedId, setCopiedId] = useState(false)
-  const isCompleted = mission.status === 'completed'
+  const isClosed = mission.status === 'completed' || mission.status === 'abandoned'
+  const [collapsed, setCollapsed] = useState(isClosed)
 
   // Fetch full mission with tasks.
   const { data: fullMission } = useQuery({
@@ -58,16 +60,25 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
     <Card
       className={cn(
         'border-0 bg-brain-raised ring-1 ring-white/5 transition-opacity',
-        isCompleted && 'opacity-50',
+        isClosed && 'opacity-50',
       )}
     >
       <CardHeader className="pb-0">
         <div className="group/header flex items-start justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground leading-snug">
-            {mission.name}
-          </h3>
+          <button
+            className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
+            onClick={() => setCollapsed((c) => !c)}
+          >
+            {collapsed
+              ? <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#62627a]" />
+              : <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#62627a]" />
+            }
+            <h3 className="text-sm font-semibold text-foreground leading-snug">
+              {mission.name}
+            </h3>
+          </button>
           <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/header:opacity-100">
-            {!isCompleted && (
+            {!isClosed && (
               <>
                 <Button
                   variant="ghost"
@@ -91,7 +102,7 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
         </div>
 
         {/* Subtitle row */}
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-5">
           <button onClick={handleCopyId} className="cursor-pointer">
             <Badge variant="secondary" className="font-mono text-[10px] bg-brain-base text-[#62627a] hover:text-muted-foreground">
               {copiedId ? 'copied!' : mission.id.slice(0, 8)}
@@ -115,27 +126,29 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-2">
-        {/* Progress bar + percentage */}
-        <div className="space-y-1">
-          <MissionProgress tasks={tasks} />
-          <p className="text-[10px] tabular-nums text-muted-foreground">{pct}%</p>
-        </div>
-
-        {/* Task list */}
-        {tasks.length > 0 && (
-          <div className="space-y-0.5">
-            {tasks.map((task) => (
-              <MissionTaskRow
-                key={task.id}
-                task={task}
-                missionId={mission.id}
-                onUpdateTask={onUpdateTask}
-              />
-            ))}
+      {!collapsed && (
+        <CardContent className="space-y-2">
+          {/* Progress bar + percentage */}
+          <div className="space-y-1">
+            <MissionProgress tasks={tasks} />
+            <p className="text-[10px] tabular-nums text-muted-foreground">{pct}%</p>
           </div>
-        )}
-      </CardContent>
+
+          {/* Task list */}
+          {tasks.length > 0 && (
+            <div className="space-y-0.5">
+              {tasks.map((task) => (
+                <MissionTaskRow
+                  key={task.id}
+                  task={task}
+                  missionId={mission.id}
+                  onUpdateTask={onUpdateTask}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
     </Card>
   )
 }

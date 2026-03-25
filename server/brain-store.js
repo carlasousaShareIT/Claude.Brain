@@ -19,6 +19,7 @@ export const loadBrain = () => {
     if (!brain.archived) brain.archived = [];
     if (!brain.webhooks) brain.webhooks = [];
     if (!brain.missions) brain.missions = [];
+    if (!brain.profiles) brain.profiles = [];
     if (!brain.projects || brain.projects.length === 0) brain.projects = [...DEFAULT_PROJECTS];
 
     // Migration: convert string project fields to arrays
@@ -79,8 +80,19 @@ export const loadBrain = () => {
     }
 
     return brain;
-  } catch {
-    const initial = { workingStyle: [], architecture: [], agentRules: [], decisions: [], log: [], archived: [], webhooks: [], missions: [], projects: [...DEFAULT_PROJECTS] };
+  } catch (err) {
+    // Before overwriting, back up the existing file if it has content
+    const bakFile = BRAIN_FILE + ".bak";
+    try {
+      const existing = fs.readFileSync(BRAIN_FILE);
+      if (existing.length > 10) {
+        fs.writeFileSync(bakFile, existing);
+        console.log(`[brain] backed up corrupted brain file to ${bakFile} (${existing.length} bytes)`);
+      }
+    } catch { /* no file to back up */ }
+
+    console.error(`[brain] failed to load brain file: ${err.message}`);
+    const initial = { workingStyle: [], architecture: [], agentRules: [], decisions: [], log: [], archived: [], webhooks: [], missions: [], profiles: [], projects: [...DEFAULT_PROJECTS] };
     const dir = path.dirname(BRAIN_FILE);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -92,5 +104,12 @@ export const loadBrain = () => {
 };
 
 export const saveBrain = (brain) => {
+  // Rotate backup: keep last known good state before every write
+  try {
+    const existing = fs.readFileSync(BRAIN_FILE);
+    if (existing.length > 10) {
+      fs.writeFileSync(BRAIN_FILE + ".bak", existing);
+    }
+  } catch { /* first write, no file yet */ }
   fs.writeFileSync(BRAIN_FILE, JSON.stringify(brain, null, 2));
 };

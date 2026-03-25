@@ -5,6 +5,7 @@ const TABS = [
   { key: 'neural', label: 'Neural Map' },
   { key: 'metrics', label: 'Metrics' },
   { key: 'missions', label: 'Missions' },
+  { key: 'sessions', label: 'Sessions' },
 ] as const
 
 export function TabHeader() {

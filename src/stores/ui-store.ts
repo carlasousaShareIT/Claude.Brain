@@ -1,7 +1,16 @@
 import { create } from 'zustand';
 
+type ActiveTab = 'neural' | 'metrics' | 'missions' | 'sessions';
+
+const VALID_TABS: ActiveTab[] = ['neural', 'metrics', 'missions', 'sessions'];
+
+function tabFromHash(): ActiveTab {
+  const hash = window.location.hash.replace('#', '');
+  return (VALID_TABS as string[]).includes(hash) ? (hash as ActiveTab) : 'neural';
+}
+
 interface UIState {
-  activeTab: 'neural' | 'metrics' | 'missions';
+  activeTab: ActiveTab;
   activeFilter: string;
   activeProject: string;
   sessionFilterId: string;
@@ -16,13 +25,16 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activeTab: 'neural',
+  activeTab: tabFromHash(),
   activeFilter: 'all',
   activeProject: '',
   sessionFilterId: '',
   graphProjectFilterId: '',
   serverLive: false,
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    window.location.hash = tab;
+    set({ activeTab: tab });
+  },
   setActiveFilter: (filter) => set({ activeFilter: filter }),
   setActiveProject: (project) => set({ activeProject: project }),
   setSessionFilterId: (id) => set({ sessionFilterId: id }),

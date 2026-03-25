@@ -162,3 +162,65 @@ export interface ChatMessage {
   type?: 'text' | 'search-results' | 'conflict' | 'batch' | 'thinking';
   data?: any;
 }
+
+export interface SessionSummary {
+  id: string
+  label: string | null
+  count: number
+  sections: Record<string, number>
+  projects: string[]
+  earliest: string | null
+  latest: string | null
+}
+
+export interface HealthReference {
+  path: string
+  exists: boolean
+}
+
+export interface HealthEntry {
+  section: string
+  text: string
+  references: HealthReference[]
+}
+
+export interface HealthReport {
+  checkedEntries: number
+  staleEntries: HealthEntry[]
+  healthyEntries: HealthEntry[]
+  noReferencesEntries: number
+}
+
+export interface AgentTaskSummary {
+  id: string
+  description: string
+  status: string
+  output: string | null
+  missionId: string
+  missionName: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface AgentSummary {
+  name: string
+  taskCount: number
+  completedCount: number
+  failedCount: number
+  blockedCount: number
+  inProgressCount: number
+  avgDurationMs: number
+  lastUsed: string | null
+  recentTasks: AgentTaskSummary[]
+}
+
+export interface ContextProfile {
+  id: string
+  name: string
+  taskType: string
+  sections: SectionName[]
+  tags: string[]
+  project: string | null
+  createdAt: string
+  updatedAt: string
+}

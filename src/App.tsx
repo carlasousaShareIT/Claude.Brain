@@ -1,12 +1,27 @@
+import { useEffect } from 'react'
 import { useSSE } from '@/hooks/use-sse'
 import { useUIStore } from '@/stores/ui-store'
 import { Sidebar } from '@/components/layout/sidebar'
 import { MainPanel } from '@/components/layout/main-panel'
 import { CommandPanel } from '@/components/layout/command-panel'
 
+const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions'] as const
+type ActiveTab = typeof VALID_TABS[number]
+
 function App() {
   useSSE()
   const serverLive = useUIStore((s) => s.serverLive)
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '')
+      if ((VALID_TABS as readonly string[]).includes(hash)) {
+        useUIStore.getState().setActiveTab(hash as ActiveTab)
+      }
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
 
   return (
     <div className="flex h-screen overflow-hidden bg-brain-base">

@@ -7,6 +7,7 @@ import { ConfidenceSplit } from './confidence-split'
 import { DecisionStatus } from './decision-status'
 import { ActivityChart } from './activity-chart'
 import { StalenessCard } from './staleness-card'
+import { HealthCard } from './health-card'
 
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
@@ -70,6 +71,10 @@ export function MetricsView() {
               sessionsCount={data.sessionsCount}
               annotationsCount={data.annotationsCount}
             />
+          </MetricCard>
+
+          <MetricCard title="Entry health" className="md:col-span-2">
+            <HealthCard />
           </MetricCard>
         </div>
       </div>
