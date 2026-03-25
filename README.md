@@ -112,7 +112,7 @@ Tell Claude when and how to write entries:
   If it would matter in a future session, write it.
 - **When not to write:** ephemeral task details, things already in code/git, duplicates of what's already stored.
 - **Format:**
-  ```
+
   curl -s -X POST http://localhost:7777/memory \
     -H "Content-Type: application/json" \
     -d '{
@@ -123,7 +123,7 @@ Tell Claude when and how to write entries:
       "sessionId": "<session-id>",
       "project": ["<project-id>"]
     }'
-  ```
+
   - Sections: `workingStyle`, `architecture`, `agentRules`, `decisions`.
   - Actions: `add`, `remove`, `update` (for lists). For decisions, value is
     `{"decision":"...","status":"open|resolved"}`.
@@ -141,7 +141,7 @@ Missions let multi-step work survive across sessions. If a session crashes, the 
 ```markdown
 ## Mission-driven orchestration
 - **Create a mission for non-trivial work** (3+ steps):
-  ```
+  
   curl -s -X POST http://localhost:7777/missions \
     -H "Content-Type: application/json" \
     -d '{
@@ -150,7 +150,7 @@ Missions let multi-step work survive across sessions. If a session crashes, the 
       "sessionId": "<session-id>",
       "tasks": [{"description": "<task 1>"}, {"description": "<task 2>"}]
     }'
-  ```
+
 - **Update task status as work progresses:**
   - Start: `PATCH /missions/<id>/tasks/<taskId>` with `{"status":"in_progress","assignedAgent":"<name>","sessionId":"<id>"}`
   - Complete: `PATCH` with `{"status":"completed","output":"<1-2 sentence summary>"}`
