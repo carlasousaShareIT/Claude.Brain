@@ -14,6 +14,7 @@ interface MissionCardProps {
   mission: MissionSummary
   onComplete: (id: string) => void
   onAbandon: (id: string) => void
+  onReopen: (id: string) => void
   onUpdateTask: (params: {
     missionId: string
     taskId: string
@@ -24,7 +25,7 @@ interface MissionCardProps {
   }) => void
 }
 
-export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: MissionCardProps) {
+export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdateTask }: MissionCardProps) {
   const [copiedId, setCopiedId] = useState(false)
   const isClosed = mission.status === 'completed' || mission.status === 'abandoned'
   const [collapsed, setCollapsed] = useState(isClosed)
@@ -71,7 +72,7 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
             </h3>
           </button>
           <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/header:opacity-100">
-            {!isClosed && (
+            {!isClosed ? (
               <>
                 <Button
                   variant="ghost"
@@ -90,6 +91,15 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
                   Abandon
                 </Button>
               </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="text-brain-accent"
+                onClick={() => onReopen(mission.id)}
+              >
+                Reopen
+              </Button>
             )}
           </div>
         </div>

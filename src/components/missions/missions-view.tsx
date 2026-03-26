@@ -35,6 +35,11 @@ export function MissionsView() {
     [updateMission],
   )
 
+  const handleReopen = useCallback(
+    (id: string) => updateMission.mutate({ id, status: 'active' }),
+    [updateMission],
+  )
+
   const handleUpdateTask = useCallback(
     (params: {
       missionId: string
@@ -69,6 +74,7 @@ export function MissionsView() {
               mission={mission}
               onComplete={handleComplete}
               onAbandon={handleAbandon}
+              onReopen={handleReopen}
               onUpdateTask={handleUpdateTask}
             />
           ))}
@@ -87,6 +93,7 @@ export function MissionsView() {
                   mission={mission}
                   onComplete={handleComplete}
                   onAbandon={handleAbandon}
+                  onReopen={handleReopen}
                   onUpdateTask={handleUpdateTask}
                 />
               ))}

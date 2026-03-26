@@ -200,6 +200,9 @@ router.patch("/:id", (req, res) => {
     if ((status === "completed" || status === "abandoned") && !mission.completedAt) {
       mission.completedAt = now;
     }
+    if (status === "active") {
+      mission.completedAt = null;
+    }
   }
 
   saveBrain(brain);
@@ -260,6 +263,14 @@ router.post("/:id/tasks", (req, res) => {
   });
 
   mission.tasks.push(...newTasks);
+
+  // Reopen closed missions when new tasks are added
+  if (mission.status !== "active") {
+    mission.status = "active";
+    mission.completedAt = null;
+    console.log(`[brain] mission reopened by new tasks: ${mission.id}`);
+  }
+
   saveBrain(brain);
 
   broadcastEvent("task-updated", { missionId: mission.id, added: newTasks.length, ts: now });
@@ -294,8 +305,8 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
     if (status === "completed" && !task.completedAt) task.completedAt = now;
   }
 
-  // Auto-complete mission if all tasks are completed
-  const allCompleted = mission.tasks.every(t => t.status === "completed");
+  // Auto-complete mission if all tasks are completed (skip if no tasks)
+  const allCompleted = mission.tasks.length > 0 && mission.tasks.every(t => t.status === "completed");
   if (allCompleted && mission.status === "active") {
     mission.status = "completed";
     mission.completedAt = now;

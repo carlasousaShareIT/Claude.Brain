@@ -58,8 +58,9 @@ export function useMissions(status?: string, project?: string) {
       output?: string;
       blockers?: string[];
     }) => api.updateTask(missionId, taskId, body),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['missions'] });
+      queryClient.invalidateQueries({ queryKey: ['mission', variables.missionId] });
     },
   });
 
