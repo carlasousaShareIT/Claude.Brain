@@ -28,7 +28,7 @@ interface MissionCardProps {
 export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdateTask }: MissionCardProps) {
   const [copiedId, setCopiedId] = useState(false)
   const isClosed = mission.status === 'completed' || mission.status === 'abandoned'
-  const [collapsed, setCollapsed] = useState(isClosed)
+  const [collapsed, setCollapsed] = useState(true)
 
   // Fetch full mission with tasks.
   const { data: fullMission } = useQuery({
