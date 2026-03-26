@@ -15,6 +15,7 @@ export default defineConfig({
     proxy: {
       '/memory': 'http://localhost:7777',
       '/missions': 'http://localhost:7777',
+      '/reminders': 'http://localhost:7777',
     },
   },
 })

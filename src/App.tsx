@@ -7,7 +7,7 @@ import { CommandPanel } from '@/components/layout/command-panel'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions'] as const
+const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions', 'reminders'] as const
 type ActiveTab = typeof VALID_TABS[number]
 
 function App() {

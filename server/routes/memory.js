@@ -430,6 +430,37 @@ router.get("/memory/context", (req, res) => {
     lines.push("");
   }
 
+  // Reminders section — pending only, project-scoped if applicable
+  if (!profileFilter || profileFilter.sections.includes("reminders")) {
+    const now = new Date().toISOString();
+    let pendingReminders = (rawBrain.reminders || []).filter(r => {
+      const isPending = r.status === "pending";
+      const isExpiredSnooze = r.status === "snoozed" && r.snoozedUntil && r.snoozedUntil <= now;
+      if (!isPending && !isExpiredSnooze) return false;
+      if (projectId && !(r.project || []).includes(projectId)) return false;
+      return true;
+    });
+    if (pendingReminders.length) {
+      lines.push("## Reminders");
+      const priorityOrder = { high: 0, normal: 1, low: 2 };
+      pendingReminders = [...pendingReminders].sort((a, b) => {
+        const pa = priorityOrder[a.priority] ?? 1;
+        const pb = priorityOrder[b.priority] ?? 1;
+        if (pa !== pb) return pa - pb;
+        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+        if (a.dueDate) return -1;
+        if (b.dueDate) return 1;
+        return (a.createdAt || "").localeCompare(b.createdAt || "");
+      });
+      for (const r of pendingReminders) {
+        const priorityTag = r.priority !== "normal" ? `[${r.priority}] ` : "";
+        const dueTag = r.dueDate ? ` (due: ${r.dueDate.slice(0, 10)})` : "";
+        lines.push(`- ${priorityTag}${r.text}${dueTag}`);
+      }
+      lines.push("");
+    }
+  }
+
   // Append mission tasks when mission-scoped
   if (mission) {
     const statusIcon = { pending: "○", in_progress: "▶", completed: "✓", blocked: "✗" };

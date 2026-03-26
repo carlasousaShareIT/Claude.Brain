@@ -17,6 +17,7 @@ import type {
   HealthReport,
   AgentSummary,
   ContextProfile,
+  Reminder,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -236,6 +237,19 @@ export const api = {
 
   deleteProfile: (id: string) =>
     apiFetch<{ ok: boolean }>(`/memory/profiles/${id}`, { method: 'DELETE' }),
+
+  // Reminders
+  getReminders: (params?: { status?: string; project?: string }) =>
+    apiFetch<Reminder[]>(`/reminders${qs({ status: params?.status, project: params?.project })}`),
+
+  createReminder: (body: { text: string; dueDate?: string; priority?: string; project?: string[] }) =>
+    apiFetch<Reminder>('/reminders', { method: 'POST', body: body as unknown as BodyInit }),
+
+  updateReminder: (id: string, body: { text?: string; status?: string; priority?: string; dueDate?: string; snoozedUntil?: string; project?: string[] }) =>
+    apiFetch<Reminder>(`/reminders/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
+
+  deleteReminder: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/reminders/${id}`, { method: 'DELETE' }),
 };
 
 export { ApiError };

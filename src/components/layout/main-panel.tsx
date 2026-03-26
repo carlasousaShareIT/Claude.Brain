@@ -4,6 +4,7 @@ import { MissionsView } from '@/components/missions/missions-view'
 import { MetricsView } from '@/components/metrics/metrics-view'
 import { NeuralMapView } from '@/components/neural-map/neural-map-view'
 import { SessionsView } from '@/components/sessions/sessions-view'
+import { RemindersView } from '@/components/reminders/reminders-view'
 
 export function MainPanel() {
   const activeTab = useUIStore((s) => s.activeTab)
@@ -16,6 +17,7 @@ export function MainPanel() {
         {activeTab === 'metrics' && <MetricsView />}
         {activeTab === 'missions' && <MissionsView />}
         {activeTab === 'sessions' && <SessionsView />}
+        {activeTab === 'reminders' && <RemindersView />}
       </div>
     </div>
   )

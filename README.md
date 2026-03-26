@@ -4,8 +4,8 @@ A persistent memory server and dashboard for [Claude Code](https://docs.anthropi
 
 ## What it does
 
-- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local `brain.json` file with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping and mission tracking.
-- **Dashboard** (React 19 + Vite) — visual UI to browse, search, annotate, and manage brain entries. Includes a neural map visualization, mission tracker, metrics view, and a command palette for quick operations.
+- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local `brain.json` file with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping, mission tracking, and personal reminders.
+- **Dashboard** (React 19 + Vite) — visual UI to browse, search, annotate, and manage brain entries. Includes a neural map visualization, mission tracker, reminders tab, metrics view, and a command palette for quick operations.
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-This starts both the Express server on `http://localhost:7777` and the Vite dev server on `http://localhost:5173`. The Vite dev server proxies `/memory` and `/missions` requests to the Express server.
+This starts both the Express server on `http://localhost:7777` and the Vite dev server on `http://localhost:5173`. The Vite dev server proxies `/memory`, `/missions`, and `/reminders` requests to the Express server.
 
 ### Production
 
@@ -81,6 +81,10 @@ If the file (or its parent directory) doesn't exist, the server creates it with 
 | GET | `/missions/resume` | Get resumable work for a project |
 | PATCH | `/missions/:id` | Update a mission |
 | PATCH | `/missions/:id/tasks/:taskId` | Update a mission task |
+| POST | `/reminders` | Create a reminder |
+| GET | `/reminders` | List reminders (?status=, ?project=, ?due=overdue) |
+| PATCH | `/reminders/:id` | Update a reminder (complete, snooze, edit) |
+| DELETE | `/reminders/:id` | Delete a reminder |
 
 ## Integrating with Claude Code
 
@@ -161,7 +165,24 @@ Missions let multi-step work survive across sessions. If a session crashes, the 
   without re-reading the code.
 ```
 
-### 4. Brain-driven orchestration (optional, advanced)
+### 4. Reminders (personal assistant)
+
+Reminders turn Claude into a personal to-do assistant. Pending reminders are automatically included in the `/memory/context` markdown output, so they surface at session start.
+
+```markdown
+## Reminders
+- **Create:** "remind me to...", "don't let me forget...", "I need to..." →
+  `POST /reminders` with `{"text":"...", "dueDate":"<ISO>", "priority":"high|normal|low"}`.
+- **Complete:** "done with X", "finished X" →
+  `PATCH /reminders/<id>` with `{"status":"done"}`.
+- **Snooze:** "push X to tomorrow", "snooze X" →
+  `PATCH /reminders/<id>` with `{"status":"snoozed","snoozedUntil":"<ISO>"}`.
+- **List:** "what do I need to do?", "my reminders" →
+  `GET /reminders` (defaults to pending).
+- Pending reminders appear in `/memory/context` at session start. Surface them early.
+```
+
+### 5. Brain-driven orchestration (optional, advanced)
 
 For teams that want Claude to factor past decisions into planning:
 
@@ -177,7 +198,7 @@ For teams that want Claude to factor past decisions into planning:
   from the task. The server returns which ones are missing. Write the missing ones.
 ```
 
-### 5. Agent context injection (optional)
+### 6. Agent context injection (optional)
 
 To pass brain context to subagents, create a helper script at `~/.claude/brain-context.sh`:
 

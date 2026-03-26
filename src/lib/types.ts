@@ -93,6 +93,7 @@ export interface Brain {
   webhooks: Webhook[];
   missions: Mission[];
   projects: Project[];
+  reminders: Reminder[];
 }
 
 export interface SearchResult {
@@ -221,4 +222,16 @@ export interface ContextProfile {
   project: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Reminder {
+  id: string
+  text: string
+  status: 'pending' | 'done' | 'snoozed'
+  priority: 'low' | 'normal' | 'high'
+  dueDate: string | null
+  project: string[]
+  createdAt: string
+  completedAt: string | null
+  snoozedUntil: string | null
 }

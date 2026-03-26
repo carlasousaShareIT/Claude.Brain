@@ -19,6 +19,7 @@ import webhooksRouter from "./routes/webhooks.js";
 import projectsRouter from "./routes/projects.js";
 import profilesRouter from "./routes/profiles.js";
 import missionsRouter from "./routes/missions.js";
+import remindersRouter from "./routes/reminders.js";
 import sseRouter from "./routes/sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,7 @@ app.use(projectsRouter);
 app.use(profilesRouter);
 app.use(sseRouter);
 app.use("/missions", missionsRouter);
+app.use("/reminders", remindersRouter);
 
 // Fix: POST /memory/merge needs mergeBrains — override the placeholder in memory router
 // The merge route is defined here since it needs cross-module import
@@ -149,5 +151,9 @@ app.listen(PORT, () => {
   console.log(`   PATCH /missions/:id         — update mission`);
   console.log(`   DELETE /missions/:id        — delete mission`);
   console.log(`   POST /missions/:id/tasks    — add tasks to mission`);
-  console.log(`   PATCH /missions/:id/tasks/:taskId — update a task\n`);
+  console.log(`   PATCH /missions/:id/tasks/:taskId — update a task`);
+  console.log(`   POST /reminders              — create a reminder`);
+  console.log(`   GET  /reminders              — list reminders (?status=, ?project=, ?due=overdue)`);
+  console.log(`   PATCH /reminders/:id         — update a reminder`);
+  console.log(`   DELETE /reminders/:id        — delete a reminder\n`);
 });
