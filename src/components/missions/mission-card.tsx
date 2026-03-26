@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MissionProgress } from './mission-progress'
 import { MissionTaskRow } from './mission-task-row'
-import { cn, timeAgo } from '@/lib/utils'
+import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { MissionSummary } from '@/lib/types'
 
@@ -47,14 +47,7 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
     setTimeout(() => setCopiedId(false), 1500)
   }, [mission.id])
 
-  const projectColor = useMemo(() => {
-    if (!mission.project) return undefined
-    let hash = 0
-    for (let i = 0; i < mission.project.length; i++) {
-      hash = mission.project.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    return `hsl(${Math.abs(hash) % 360}, 60%, 65%)`
-  }, [mission.project])
+  const missionColor = mission.project ? projectColor(mission.project) : undefined
 
   return (
     <Card
@@ -112,7 +105,7 @@ export function MissionCard({ mission, onComplete, onAbandon, onUpdateTask }: Mi
             <Badge
               variant="secondary"
               className="text-[10px]"
-              style={{ backgroundColor: `${projectColor}20`, color: projectColor }}
+              style={{ backgroundColor: `${missionColor}20`, color: missionColor }}
             >
               {mission.project}
             </Badge>

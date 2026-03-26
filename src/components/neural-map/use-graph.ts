@@ -103,7 +103,7 @@ export function useGraph({
         }
       }
 
-      const nodes: GNode[] = entries.map(({ entry, section }, i) => {
+      const nodes: GNode[] = entries.map(({ entry, section }) => {
         const text = entryText(entry);
         const id = `${section}::${text}`;
         const prev = stablePositions.current.get(id);

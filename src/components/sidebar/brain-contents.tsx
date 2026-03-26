@@ -32,7 +32,7 @@ export function BrainContents() {
     if (activeFilter === 'all') {
       const all: TaggedEntry[] = []
       for (const section of SECTIONS) {
-        const sectionEntries = brain[section as SectionName]
+        const sectionEntries = brain[section as SectionName] as BrainEntry[]
         for (const entry of filterByProject(sectionEntries)) {
           all.push({ entry, section })
         }
@@ -46,7 +46,7 @@ export function BrainContents() {
 
     const sectionKey = activeFilter as SectionName
     if (brain[sectionKey]) {
-      return filterByProject(brain[sectionKey])
+      return filterByProject(brain[sectionKey] as BrainEntry[])
         .map((entry) => ({ entry, section: sectionKey }))
         .sort(
           (a, b) =>

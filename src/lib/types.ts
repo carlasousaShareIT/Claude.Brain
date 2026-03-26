@@ -155,13 +155,11 @@ export interface ResumableMission {
   tasks: Task[];
 }
 
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  type?: 'text' | 'search-results' | 'conflict' | 'batch' | 'thinking';
-  data?: any;
-}
+export type ChatMessage =
+  | { id: string; role: 'user' | 'assistant'; content: string; type: 'text' | 'thinking' }
+  | { id: string; role: 'user' | 'assistant'; content: string; type: 'search-results'; data: SearchResult[] }
+  | { id: string; role: 'user' | 'assistant'; content: string; type: 'conflict'; data: ConflictResult[] }
+  | { id: string; role: 'user' | 'assistant'; content: string; type: 'batch'; data: string[] };
 
 export interface SessionSummary {
   id: string

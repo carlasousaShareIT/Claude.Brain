@@ -57,7 +57,7 @@ function StaleEntryRow({ entry, onArchive }: { entry: HealthEntry; onArchive: ()
 }
 
 export function HealthCard() {
-  const [repoPath, setRepoPath] = useState('C:/Users/carla/Documents/Cludo')
+  const [repoPath, setRepoPath] = useState('')
   const { mutate: runCheck, data, isPending, error } = useHealth()
   const { archive } = useArchived()
 

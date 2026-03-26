@@ -1,5 +1,17 @@
 // entry-utils.js — entry normalization and project filtering utilities
 
+const agentRuleWords = ["always", "never", "must", "stop", "skip", "rule", "agent"];
+const decisionWords = ["decided", "decision", "resolve", "choose", "agreed"];
+const archWords = ["migrate", "architecture", "repo", "mfe", "service", "api", "deploy", "build", "pattern", "domain"];
+
+export const detectSection = (text) => {
+  const lower = text.toLowerCase();
+  if (agentRuleWords.some(w => lower.includes(w))) return "agentRules";
+  if (decisionWords.some(w => lower.includes(w))) return "decisions";
+  if (archWords.some(w => lower.includes(w))) return "architecture";
+  return "workingStyle";
+};
+
 // Normalize project field to always be an array
 export const normalizeProject = (project) => {
   if (!project) return ["general"];

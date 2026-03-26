@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import type { ChatMessage, SearchResult, ConflictResult } from '@/lib/types';
+import type { ChatMessage, SearchResult } from '@/lib/types';
 import { ResultCard } from './result-card';
 import { ConflictWarning } from './conflict-warning';
 
@@ -51,7 +51,7 @@ export function ChatBubble({
             {message.content && (
               <p className="text-xs text-muted-foreground mb-2">{message.content}</p>
             )}
-            {(message.data as SearchResult[])?.map((result, i) => (
+            {message.data?.map((result, i) => (
               <ResultCard
                 key={i}
                 result={result}
@@ -64,7 +64,7 @@ export function ChatBubble({
 
         {message.type === 'conflict' && (
           <ConflictWarning
-            conflicts={message.data as ConflictResult[]}
+            conflicts={message.data}
             onAddAnyway={onConflictAddAnyway ?? (() => {})}
             onCancel={onConflictCancel ?? (() => {})}
           />
@@ -72,7 +72,7 @@ export function ChatBubble({
 
         {message.type === 'batch' && (
           <div className="space-y-1">
-            {(message.data as string[])?.map((line, i) => (
+            {message.data?.map((line, i) => (
               <p key={i} className="text-xs text-foreground leading-relaxed">{line}</p>
             ))}
           </div>

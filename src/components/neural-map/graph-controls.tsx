@@ -46,7 +46,7 @@ export function GraphControls({ nodeCount, edgeCount, brain }: GraphControlsProp
       {/* Project filter. */}
       <Select
         value={graphProjectFilterId || 'all'}
-        onValueChange={(v) => setGraphProjectFilterId(v === 'all' ? '' : v)}
+        onValueChange={(v: string | null) => setGraphProjectFilterId(v === 'all' || v === null ? '' : v)}
       >
         <SelectTrigger size="sm" className="w-40 border-white/10 bg-brain-raised/80 text-xs backdrop-blur-sm">
           <SelectValue />
@@ -64,7 +64,7 @@ export function GraphControls({ nodeCount, edgeCount, brain }: GraphControlsProp
       {/* Session filter. */}
       <Select
         value={sessionFilterId || 'all'}
-        onValueChange={(v) => setSessionFilterId(v === 'all' ? '' : v)}
+        onValueChange={(v: string | null) => setSessionFilterId(v === 'all' || v === null ? '' : v)}
       >
         <SelectTrigger size="sm" className="w-40 border-white/10 bg-brain-raised/80 text-xs backdrop-blur-sm">
           <SelectValue />

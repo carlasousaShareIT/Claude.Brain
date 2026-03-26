@@ -31,8 +31,8 @@ export function SidebarHeader() {
   }, [queryClient])
 
   const handleProjectChange = useCallback(
-    (val: string) => {
-      setActiveProject(val === 'all' ? '' : val)
+    (val: string | null) => {
+      setActiveProject(val === 'all' || val === null ? '' : val)
     },
     [setActiveProject],
   )

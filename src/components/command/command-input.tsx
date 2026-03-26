@@ -61,6 +61,7 @@ export function CommandInput({ value, onChange, onSend }: CommandInputProps) {
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search or type a command..."
+          aria-label="Command input"
           rows={1}
           className="flex-1 resize-none bg-transparent text-xs text-foreground placeholder:text-[#62627a] outline-none"
           style={{ maxHeight: 120, fieldSizing: 'content' } as React.CSSProperties}

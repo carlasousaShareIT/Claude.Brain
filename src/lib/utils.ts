@@ -35,3 +35,11 @@ export function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 1) + '\u2026';
 }
+
+export function projectColor(project: string): string {
+  let hash = 0
+  for (let i = 0; i < project.length; i++) {
+    hash = project.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return `hsl(${Math.abs(hash) % 360}, 60%, 65%)`
+}

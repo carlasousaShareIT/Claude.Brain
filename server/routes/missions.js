@@ -5,6 +5,9 @@ import { loadBrain, saveBrain } from "../brain-store.js";
 import { slugify } from "../text-utils.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
+const VALID_MISSION_STATUSES = new Set(["active", "completed", "abandoned"]);
+const VALID_TASK_STATUSES = new Set(["pending", "in_progress", "completed", "blocked"]);
+
 const router = Router();
 
 // POST /missions — create a mission
@@ -190,6 +193,9 @@ router.patch("/:id", (req, res) => {
   if (name !== undefined) mission.name = name;
   if (project !== undefined) mission.project = project;
   if (status !== undefined) {
+    if (!VALID_MISSION_STATUSES.has(status)) {
+      return res.status(400).json({ error: `Invalid status "${status}". Must be one of: ${[...VALID_MISSION_STATUSES].join(", ")}` });
+    }
     mission.status = status;
     if ((status === "completed" || status === "abandoned") && !mission.completedAt) {
       mission.completedAt = now;
@@ -280,6 +286,9 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
   if (output !== undefined) task.output = output;
   if (blockers !== undefined) task.blockers = blockers;
   if (status !== undefined) {
+    if (!VALID_TASK_STATUSES.has(status)) {
+      return res.status(400).json({ error: `Invalid status "${status}". Must be one of: ${[...VALID_TASK_STATUSES].join(", ")}` });
+    }
     task.status = status;
     if (status === "in_progress" && !task.startedAt) task.startedAt = now;
     if (status === "completed" && !task.completedAt) task.completedAt = now;

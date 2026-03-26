@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Clock, Layers } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { cn, timeAgo } from '@/lib/utils'
+import { cn, timeAgo, projectColor } from '@/lib/utils'
 import type { SessionSummary } from '@/lib/types'
 
 interface SessionCardProps {
@@ -11,13 +11,6 @@ interface SessionCardProps {
   isSelected: boolean
 }
 
-function projectColor(project: string): string {
-  let hash = 0
-  for (let i = 0; i < project.length; i++) {
-    hash = project.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return `hsl(${Math.abs(hash) % 360}, 60%, 65%)`
-}
 
 export function SessionCard({ session, onSelect, isSelected }: SessionCardProps) {
   const displayName = useMemo(() => {

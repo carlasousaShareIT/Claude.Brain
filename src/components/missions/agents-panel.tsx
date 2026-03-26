@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
 import { useAgents } from '@/hooks/use-agents'
 import { AgentCard } from './agent-card'
@@ -8,8 +8,10 @@ export function AgentsPanel() {
   const count = agents?.length ?? 0
   const [expanded, setExpanded] = useState(count > 0)
 
-  // Expand by default once agents load, but don't force re-collapse after
-  // We use a ref pattern to auto-expand on first non-empty load only
+  useEffect(() => {
+    if (count > 0) setExpanded(true);
+  }, [count]);
+
   const hasAgents = count > 0
 
   return (

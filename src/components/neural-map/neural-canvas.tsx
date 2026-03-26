@@ -30,7 +30,7 @@ export function NeuralCanvas({
   const hoveredNodeRef = useRef<GNode | null>(null);
   const pinnedNodeRef = useRef<GNode | null>(null);
 
-  const { nodesRef, edgesRef, getNodeAt, flashNode } = useGraph({
+  const { nodesRef, edgesRef, getNodeAt, flashNode: _flashNode } = useGraph({
     brain,
     canvasRef,
     dpr,

@@ -24,7 +24,7 @@ function userMsg(content: string): ChatMessage {
 }
 
 function assistantMsg(content: string, type: ChatMessage['type'] = 'text', data?: unknown): ChatMessage {
-  return { id: nextId(), role: 'assistant', content, type, data };
+  return { id: nextId(), role: 'assistant', content, type, data } as ChatMessage;
 }
 
 export function CommandPanel() {
@@ -45,8 +45,27 @@ export function CommandPanel() {
     setMessages((prev) => prev.filter((m) => m.type !== 'thinking'));
   }, []);
 
+  // Helper: find which section an entry belongs to by text match
+  const findSectionForText = useCallback(
+    (text: string): SectionName | undefined => {
+      const data = brain.data;
+      if (!data) return undefined;
+      const lower = text.toLowerCase();
+      for (const section of ['workingStyle', 'architecture', 'agentRules'] as const) {
+        if (data[section]?.some((e) => entryText(e).toLowerCase().includes(lower))) {
+          return section;
+        }
+      }
+      if (data.decisions?.some((d) => d.decision.toLowerCase().includes(lower))) {
+        return 'decisions';
+      }
+      return undefined;
+    },
+    [brain.data]
+  );
+
   const executeCommand = useCallback(
-    async (cmd: ParsedCommand, rawInput: string) => {
+    async (cmd: ParsedCommand, _rawInput: string) => {
       switch (cmd.type) {
         case 'search': {
           if (!cmd.text) return;
@@ -327,44 +346,9 @@ export function CommandPanel() {
           break;
         }
 
-        case 'batch': {
-          if (!cmd.commands) return;
-          const results: string[] = [];
-          for (const sub of cmd.commands) {
-            try {
-              // Execute each sub-command and collect a summary line
-              const tempMessages: ChatMessage[] = [];
-              const origAdd = addMessages;
-              // We collect results inline rather than adding individually
-              await executeCommand(sub, '');
-            } catch {
-              results.push(`Failed: ${sub.type}`);
-            }
-          }
-          break;
-        }
       }
     },
-    [brain, archived, missions, activeProject, addMessages, removeThinking]
-  );
-
-  // Helper: find which section an entry belongs to by text match
-  const findSectionForText = useCallback(
-    (text: string): SectionName | undefined => {
-      const data = brain.data;
-      if (!data) return undefined;
-      const lower = text.toLowerCase();
-      for (const section of ['workingStyle', 'architecture', 'agentRules'] as const) {
-        if (data[section]?.some((e) => entryText(e).toLowerCase().includes(lower))) {
-          return section;
-        }
-      }
-      if (data.decisions?.some((d) => d.decision.toLowerCase().includes(lower))) {
-        return 'decisions';
-      }
-      return undefined;
-    },
-    [brain.data]
+    [brain, archived, missions, activeProject, addMessages, removeThinking, findSectionForText]
   );
 
   const handleSend = useCallback(async () => {

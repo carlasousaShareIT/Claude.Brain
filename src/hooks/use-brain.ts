@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { SectionName } from '@/lib/types';
+import type { SectionName as _SectionName } from '@/lib/types';
 import { api } from '@/lib/api';
 
 export function useBrain(project?: string) {

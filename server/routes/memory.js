@@ -5,7 +5,7 @@ import path from "path";
 import os from "os";
 import { Router } from "express";
 import { loadBrain, saveBrain } from "../brain-store.js";
-import { toEntry, entryText, normalizeProject, getEntryProjects, filterByProject } from "../entry-utils.js";
+import { toEntry, entryText, normalizeProject, getEntryProjects, filterByProject, detectSection } from "../entry-utils.js";
 import { tokenize, similarity } from "../text-utils.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
@@ -156,11 +156,14 @@ router.get("/memory/sessions", (req, res) => {
     if (typeof entry === "object") track(entry.sessionId, entry.createdAt, "decisions", entry.project);
   }
 
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const result = Object.values(sessions).map(s => {
     let label = null;
-    try {
-      label = fs.readFileSync(path.join(os.homedir(), ".claude", "sessions", s.id + ".label"), "utf8").trim();
-    } catch { /* no label file */ }
+    if (uuidPattern.test(s.id)) {
+      try {
+        label = fs.readFileSync(path.join(os.homedir(), ".claude", "sessions", s.id + ".label"), "utf8").trim();
+      } catch { /* no label file */ }
+    }
     return { ...s, label, projects: [...s.projects] };
   });
   res.json(result.sort((a, b) => (b.latest || "").localeCompare(a.latest || "")));
@@ -185,20 +188,7 @@ router.post("/memory/auto", (req, res) => {
   const { value, source, sessionId, project } = req.body;
   if (!value) return res.status(400).json({ error: "Missing value" });
 
-  const lower = value.toLowerCase();
-  let section = "workingStyle";
-
-  const agentRuleWords = ["always", "never", "must", "stop", "skip", "rule", "agent"];
-  const decisionWords = ["decided", "decision", "resolve", "choose", "agreed"];
-  const archWords = ["migrate", "architecture", "repo", "mfe", "service", "api", "deploy", "build", "pattern", "domain"];
-
-  if (agentRuleWords.some(w => lower.includes(w))) {
-    section = "agentRules";
-  } else if (decisionWords.some(w => lower.includes(w))) {
-    section = "decisions";
-  } else if (archWords.some(w => lower.includes(w))) {
-    section = "architecture";
-  }
+  const section = detectSection(value);
 
   const brain = loadBrain();
 
@@ -264,6 +254,16 @@ router.post("/memory/confidence", (req, res) => {
 router.post("/memory/health", (req, res) => {
   const { repoPath } = req.body;
   if (!repoPath) return res.status(400).json({ error: "Missing repoPath" });
+
+  const resolvedPath = path.resolve(repoPath);
+  if (
+    resolvedPath.includes("..") ||
+    resolvedPath === "/" ||
+    /^[A-Za-z]:\\?$/.test(resolvedPath) ||
+    resolvedPath.length < 10
+  ) {
+    return res.status(400).json({ error: "Invalid repoPath" });
+  }
 
   const brain = loadBrain();
   const pathRegex = /(?:^|\s|['"`])((?:src|components|hooks|server|routes|lib|services|modules|app|pages|utils|assets|styles|models|shared|features|core|config|public)\/[\w\/\-\.]+\.\w+)/gi;
@@ -570,19 +570,6 @@ router.post("/memory/diff", (req, res) => {
   const brain = loadBrain();
   const filteredBrain = project ? filterByProject(brain, project) : brain;
 
-  // Auto-detect section using the same keyword logic as POST /memory/auto
-  const agentRuleWords = ["always", "never", "must", "stop", "skip", "rule", "agent"];
-  const decisionWords = ["decided", "decision", "resolve", "choose", "agreed"];
-  const archWords = ["migrate", "architecture", "repo", "mfe", "service", "api", "deploy", "build", "pattern", "domain"];
-
-  const detectSection = (text) => {
-    const lower = text.toLowerCase();
-    if (agentRuleWords.some(w => lower.includes(w))) return "agentRules";
-    if (decisionWords.some(w => lower.includes(w))) return "decisions";
-    if (archWords.some(w => lower.includes(w))) return "architecture";
-    return "workingStyle";
-  };
-
   const missing = [];
   const matched = [];
 
@@ -631,11 +618,6 @@ router.post("/memory/diff", (req, res) => {
         bestText = dText;
         bestSection = "decisions";
       }
-    }
-
-    // If the specified section is "decisions" but we haven't searched it in the loop above
-    if (section === "decisions") {
-      // Already covered in the decisions check above
     }
 
     if (bestSim >= MATCH_THRESHOLD) {

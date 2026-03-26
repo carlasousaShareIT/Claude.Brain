@@ -22,14 +22,41 @@ export function useSSE() {
         setServerLive(true);
       };
 
+      // Catch-all for unnamed events — safety net only
       es.onmessage = () => {
         queryClient.invalidateQueries({ queryKey: ['brain'] });
-        queryClient.invalidateQueries({ queryKey: ['missions'] });
+      };
+
+      // Brain/archived mutations
+      const onBrainEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['brain'] });
         queryClient.invalidateQueries({ queryKey: ['archived'] });
-        queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        queryClient.invalidateQueries({ queryKey: ['agents'] });
+      };
+      for (const name of ['add', 'remove', 'update', 'confidence', 'archive', 'unarchive', 'annotate', 'retag']) {
+        es.addEventListener(name, onBrainEvent);
+      }
+
+      // Project events also affect brain data
+      const onProjectEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['brain'] });
+      };
+      for (const name of ['project', 'project-closed', 'project-reopened']) {
+        es.addEventListener(name, onProjectEvent);
+      }
+
+      // Mission events
+      const onMissionEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['missions'] });
+      };
+      for (const name of ['mission-created', 'mission-updated', 'task-updated']) {
+        es.addEventListener(name, onMissionEvent);
+      }
+
+      // Profile events
+      const onProfileEvent = () => {
         queryClient.invalidateQueries({ queryKey: ['profiles'] });
       };
+      es.addEventListener('profile-updated', onProfileEvent);
 
       es.onerror = () => {
         setServerLive(false);

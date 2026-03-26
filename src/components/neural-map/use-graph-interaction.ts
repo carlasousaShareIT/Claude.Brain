@@ -12,7 +12,7 @@ interface UseGraphInteractionOptions {
 export function useGraphInteraction({
   canvasRef,
   getNodeAt,
-  nodesRef,
+  nodesRef: _nodesRef,
   hoveredNodeRef,
   pinnedNodeRef,
 }: UseGraphInteractionOptions) {

@@ -7,10 +7,9 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { BRAIN_FILE } from "./brain-store.js";
+import { BRAIN_FILE, loadBrain, saveBrain, runMigrations } from "./brain-store.js";
 import { startHeartbeat } from "./broadcast.js";
 import { mergeBrains } from "./merge-utils.js";
-import { loadBrain, saveBrain } from "./brain-store.js";
 
 import memoryRouter from "./routes/memory.js";
 import archiveRouter from "./routes/archive.js";
@@ -29,7 +28,16 @@ console.log("__dirname:", __dirname);
 console.log("BRAIN_FILE:", BRAIN_FILE);
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. same-origin, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow any localhost or 127.0.0.1 origin on any port
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    if (isLocal) return callback(null, true);
+    callback(new Error("CORS: origin not allowed"));
+  },
+}));
 app.use(express.json());
 
 // Serve React app in production, dev message otherwise
@@ -65,17 +73,27 @@ app.use("/missions", missionsRouter);
 
 // Fix: POST /memory/merge needs mergeBrains — override the placeholder in memory router
 // The merge route is defined here since it needs cross-module import
-app.post("/memory/merge", (req, res) => {
-  const incoming = req.body;
-  if (!incoming || typeof incoming !== "object") {
-    return res.status(400).json({ error: "Invalid body" });
-  }
+app.post("/memory/merge", (req, res, next) => {
+  try {
+    const incoming = req.body;
+    if (!incoming || typeof incoming !== "object") {
+      return res.status(400).json({ error: "Invalid body" });
+    }
 
-  const server = loadBrain();
-  const merged = mergeBrains(server, incoming);
-  saveBrain(merged);
-  console.log("[brain] merged artifact storage into brain.json");
-  res.json(merged);
+    const server = loadBrain();
+    const merged = mergeBrains(server, incoming);
+    saveBrain(merged);
+    console.log("[brain] merged artifact storage into brain.json");
+    res.json(merged);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Global error handler — must be defined after all route mounts
+app.use((err, req, res, next) => {
+  console.error(`[brain] unhandled error on ${req.method} ${req.path}:`, err.message);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 // Catch-all for SPA routing in production
@@ -86,6 +104,9 @@ app.get("/{*splat}", (req, res) => {
   }
   res.status(404).json({ error: "Not found" });
 });
+
+// Run one-time data migrations before accepting requests
+runMigrations();
 
 // Start heartbeat for SSE
 startHeartbeat();

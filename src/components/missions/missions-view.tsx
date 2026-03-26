@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import { useMissions } from '@/hooks/use-missions'
 import { useUIStore } from '@/stores/ui-store'
-import { MissionsToolbar } from './missions-toolbar'
 import { ResumeBanner } from './resume-banner'
 import { MissionCard } from './mission-card'
 import { AgentsPanel } from './agents-panel'
@@ -56,10 +55,6 @@ export function MissionsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 px-4">
-        <MissionsToolbar />
-      </div>
-
       <div className="flex-1 overflow-y-auto px-4">
         <div className="space-y-3 pb-4">
           <ResumeBanner />
