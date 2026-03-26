@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ShieldAlert, ShieldCheck, Loader2 } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, Loader2, Info } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useHealth } from '@/hooks/use-health'
 import { useArchived } from '@/hooks/use-archived'
 import { cn, truncate } from '@/lib/utils'
@@ -68,6 +69,16 @@ export function HealthCard() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger
+            render={<button className="shrink-0 text-[#62627a] hover:text-muted-foreground transition-colors" />}
+          >
+            <Info className="h-3.5 w-3.5" />
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-64 text-xs">
+            Scans brain entries for file path references and checks if they still exist on disk. Entries pointing to deleted or renamed files are likely stale and should be archived or updated.
+          </TooltipContent>
+        </Tooltip>
         <input
           type="text"
           value={repoPath}
