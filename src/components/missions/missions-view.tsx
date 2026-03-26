@@ -61,7 +61,7 @@ export function MissionsView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto px-4">
-        <div className="space-y-3 pb-4">
+        <div className="space-y-3 pt-4 pb-4">
           <ResumeBanner />
 
           {active.length === 0 && closed.length === 0 && (
