@@ -7,6 +7,7 @@ const TABS = [
   { key: 'missions', label: 'Missions' },
   { key: 'sessions', label: 'Sessions' },
   { key: 'reminders', label: 'Reminders' },
+  { key: 'experiments', label: 'Experiments' },
 ] as const
 
 export function TabHeader() {

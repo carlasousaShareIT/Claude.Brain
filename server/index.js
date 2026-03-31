@@ -20,6 +20,7 @@ import projectsRouter from "./routes/projects.js";
 import profilesRouter from "./routes/profiles.js";
 import missionsRouter from "./routes/missions.js";
 import remindersRouter from "./routes/reminders.js";
+import experimentsRouter from "./routes/experiments.js";
 import sseRouter from "./routes/sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +73,7 @@ app.use(profilesRouter);
 app.use(sseRouter);
 app.use("/missions", missionsRouter);
 app.use("/reminders", remindersRouter);
+app.use("/experiments", experimentsRouter);
 
 // Fix: POST /memory/merge needs mergeBrains — override the placeholder in memory router
 // The merge route is defined here since it needs cross-module import
@@ -155,5 +157,11 @@ app.listen(PORT, () => {
   console.log(`   POST /reminders              — create a reminder`);
   console.log(`   GET  /reminders              — list reminders (?status=, ?project=, ?due=overdue)`);
   console.log(`   PATCH /reminders/:id         — update a reminder`);
-  console.log(`   DELETE /reminders/:id        — delete a reminder\n`);
+  console.log(`   DELETE /reminders/:id        — delete a reminder`);
+  console.log(`   POST /experiments               — create an experiment`);
+  console.log(`   GET  /experiments               — list experiments (?status=, ?project=)`);
+  console.log(`   GET  /experiments/:id            — single experiment with observations`);
+  console.log(`   PATCH /experiments/:id           — update/conclude experiment`);
+  console.log(`   POST /experiments/:id/observations — record observation`);
+  console.log(`   DELETE /experiments/:id          — delete experiment\n`);
 });

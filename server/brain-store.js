@@ -30,6 +30,7 @@ export const loadBrain = () => {
     if (!brain.missions) brain.missions = [];
     if (!brain.profiles) brain.profiles = [];
     if (!brain.reminders) brain.reminders = [];
+    if (!brain.experiments) brain.experiments = [];
     if (!brain.projects || brain.projects.length === 0) brain.projects = [...DEFAULT_PROJECTS];
 
     brainCache = brain;
@@ -46,7 +47,7 @@ export const loadBrain = () => {
     } catch { /* no file to back up */ }
 
     console.error(`[brain] failed to load brain file: ${err.message}`);
-    const initial = { workingStyle: [], architecture: [], agentRules: [], decisions: [], log: [], archived: [], webhooks: [], missions: [], profiles: [], reminders: [], projects: [...DEFAULT_PROJECTS] };
+    const initial = { workingStyle: [], architecture: [], agentRules: [], decisions: [], log: [], archived: [], webhooks: [], missions: [], profiles: [], reminders: [], experiments: [], projects: [...DEFAULT_PROJECTS] };
     const dir = path.dirname(BRAIN_FILE);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

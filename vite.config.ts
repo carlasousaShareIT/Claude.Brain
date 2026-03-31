@@ -16,6 +16,7 @@ export default defineConfig({
       '/memory': 'http://localhost:7777',
       '/missions': 'http://localhost:7777',
       '/reminders': 'http://localhost:7777',
+      '/experiments': 'http://localhost:7777',
     },
   },
 })
