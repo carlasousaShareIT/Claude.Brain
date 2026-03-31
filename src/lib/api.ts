@@ -18,6 +18,9 @@ import type {
   AgentSummary,
   ContextProfile,
   Reminder,
+  Experiment,
+  ExperimentSummary,
+  Observation,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -229,10 +232,10 @@ export const api = {
   // Profiles
   getProfiles: () => apiFetch<ContextProfile[]>('/memory/profiles'),
 
-  createProfile: (body: { name: string; taskType: string; sections: SectionName[]; tags: string[]; project?: string | null }) =>
+  createProfile: (body: { name: string; taskType: string; sections: SectionName[]; tags: string[]; project?: string | null; model?: string; role?: string; systemPrompt?: string; constraints?: string[] }) =>
     apiFetch<ContextProfile>('/memory/profiles', { method: 'POST', body: body as unknown as BodyInit }),
 
-  updateProfile: (id: string, body: Partial<{ name: string; taskType: string; sections: SectionName[]; tags: string[]; project: string | null }>) =>
+  updateProfile: (id: string, body: Partial<{ name: string; taskType: string; sections: SectionName[]; tags: string[]; project: string | null; model: string; role: string; systemPrompt: string; constraints: string[] }>) =>
     apiFetch<ContextProfile>(`/memory/profiles/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
 
   deleteProfile: (id: string) =>
@@ -250,6 +253,30 @@ export const api = {
 
   deleteReminder: (id: string) =>
     apiFetch<{ ok: boolean }>(`/reminders/${id}`, { method: 'DELETE' }),
+
+  // Experiments
+  getExperiments: (params?: { status?: string; project?: string }) =>
+    apiFetch<ExperimentSummary[]>(`/experiments${qs({ status: params?.status, project: params?.project })}`),
+
+  getExperiment: (id: string) => apiFetch<Experiment>(`/experiments/${id}`),
+
+  createExperiment: (body: { name: string; hypothesis: string; project?: string[]; sessionId?: string }) =>
+    apiFetch<Experiment>('/experiments', { method: 'POST', body: body as unknown as BodyInit }),
+
+  updateExperiment: (id: string, body: { name?: string; hypothesis?: string; status?: string; conclusion?: string; project?: string[] }) =>
+    apiFetch<Experiment>(`/experiments/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
+
+  addObservation: (experimentId: string, body: { text: string; sentiment?: string; sessionId?: string; source?: string }) =>
+    apiFetch<Observation>(`/experiments/${experimentId}/observations`, { method: 'POST', body: body as unknown as BodyInit }),
+
+  updateObservation: (experimentId: string, obsId: string, body: { text?: string; sentiment?: string }) =>
+    apiFetch<Observation>(`/experiments/${experimentId}/observations/${obsId}`, { method: 'PATCH', body: body as unknown as BodyInit }),
+
+  deleteObservation: (experimentId: string, obsId: string) =>
+    apiFetch<{ ok: boolean }>(`/experiments/${experimentId}/observations/${obsId}`, { method: 'DELETE' }),
+
+  deleteExperiment: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/experiments/${id}`, { method: 'DELETE' }),
 };
 
 export { ApiError };

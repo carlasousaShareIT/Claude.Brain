@@ -32,6 +32,10 @@ router.post("/memory/profiles", (req, res) => {
     sections: sections || ["workingStyle", "architecture", "agentRules", "decisions"],
     tags: tags || [],
     project: project || null,
+    model: req.body.model || "",
+    role: req.body.role || "",
+    systemPrompt: req.body.systemPrompt || "",
+    constraints: req.body.constraints || [],
     createdAt: now,
     updatedAt: now,
   };
@@ -55,6 +59,10 @@ router.patch("/memory/profiles/:id", (req, res) => {
   if (sections !== undefined) profile.sections = sections;
   if (tags !== undefined) profile.tags = tags;
   if (project !== undefined) profile.project = project;
+  if (req.body.model !== undefined) profile.model = req.body.model;
+  if (req.body.role !== undefined) profile.role = req.body.role;
+  if (req.body.systemPrompt !== undefined) profile.systemPrompt = req.body.systemPrompt;
+  if (req.body.constraints !== undefined) profile.constraints = req.body.constraints;
   profile.updatedAt = new Date().toISOString();
 
   saveBrain(brain);

@@ -10,11 +10,13 @@ export function Sidebar() {
       <aside className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-r border-brain-surface bg-brain-raised">
         <SidebarHeader />
         <Separator className="bg-brain-surface" />
-        <FilterList />
-        <Separator className="bg-brain-surface" />
-        <ProfilesPanel />
-        <Separator className="bg-brain-surface" />
-        <BrainContents />
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <FilterList />
+          <Separator className="bg-brain-surface" />
+          <ProfilesPanel />
+          <Separator className="bg-brain-surface" />
+          <BrainContents />
+        </div>
         <SidebarFooter />
       </aside>
   )

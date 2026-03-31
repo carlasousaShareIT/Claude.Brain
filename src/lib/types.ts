@@ -83,6 +83,41 @@ export interface Webhook {
   events: string[];
 }
 
+export interface Observation {
+  id: string;
+  text: string;
+  sentiment: 'positive' | 'negative' | 'neutral';
+  sessionId: string | null;
+  source: string;
+  createdAt: string;
+}
+
+export interface Experiment {
+  id: string;
+  name: string;
+  hypothesis: string;
+  status: 'active' | 'concluded' | 'abandoned';
+  conclusion: 'positive' | 'negative' | 'mixed' | null;
+  project: string[];
+  sessionId: string | null;
+  createdAt: string;
+  concludedAt: string | null;
+  observations: Observation[];
+}
+
+export interface ExperimentSummary {
+  id: string;
+  name: string;
+  hypothesis: string;
+  status: 'active' | 'concluded' | 'abandoned';
+  conclusion: 'positive' | 'negative' | 'mixed' | null;
+  project: string[];
+  createdAt: string;
+  concludedAt: string | null;
+  observationCount: number;
+  sentimentBreakdown: { positive: number; negative: number; neutral: number };
+}
+
 export interface Brain {
   workingStyle: BrainEntry[];
   architecture: BrainEntry[];
@@ -94,6 +129,7 @@ export interface Brain {
   missions: Mission[];
   projects: Project[];
   reminders: Reminder[];
+  experiments: Experiment[];
 }
 
 export interface SearchResult {
@@ -220,6 +256,10 @@ export interface ContextProfile {
   sections: SectionName[]
   tags: string[]
   project: string | null
+  model: 'sonnet' | 'opus' | 'haiku' | ''
+  role: string
+  systemPrompt: string
+  constraints: string[]
   createdAt: string
   updatedAt: string
 }

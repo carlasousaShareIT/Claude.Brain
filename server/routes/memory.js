@@ -128,6 +128,14 @@ router.get("/memory/search", (req, res) => {
     }
   }
 
+  for (const exp of (brain.experiments || [])) {
+    if (projectId && !(exp.project || []).includes(projectId)) continue;
+    const searchable = `${exp.name} ${exp.hypothesis} ${(exp.observations || []).map(o => o.text).join(" ")}`.toLowerCase();
+    if (terms.every(t => searchable.includes(t))) {
+      results.push({ section: "experiments", entry: exp });
+    }
+  }
+
   res.json({ query: q, count: results.length, results });
 });
 
@@ -343,6 +351,21 @@ router.get("/memory/context", (req, res) => {
   } else if (profileFilter) {
     lines.push(`# Brain Context — Profile: ${profileFilter.name}`);
     lines.push("");
+    // Persona block
+    if (profileFilter.model || profileFilter.role || profileFilter.systemPrompt || (profileFilter.constraints && profileFilter.constraints.length)) {
+      lines.push("## Agent Persona");
+      if (profileFilter.model) lines.push(`- **Model:** ${profileFilter.model}`);
+      if (profileFilter.role) lines.push(`- **Role:** ${profileFilter.role}`);
+      if (profileFilter.systemPrompt) {
+        lines.push(`- **System prompt:**`);
+        lines.push(profileFilter.systemPrompt);
+      }
+      if (profileFilter.constraints && profileFilter.constraints.length) {
+        lines.push(`- **Constraints:**`);
+        profileFilter.constraints.forEach(c => lines.push(`  - ${c}`));
+      }
+      lines.push("");
+    }
   } else if (projectId) {
     const proj = (rawBrain.projects || []).find(p => p.id === projectId);
     lines.push(`# Brain Context — ${proj ? proj.name : projectId}`);
@@ -459,6 +482,51 @@ router.get("/memory/context", (req, res) => {
       }
       lines.push("");
     }
+  }
+
+  // Append active experiments
+  const allExperiments = rawBrain.experiments || [];
+  const activeExperiments = allExperiments.filter(e => {
+    if (e.status !== "active") return false;
+    if (projectId && !(e.project || []).includes(projectId)) return false;
+    return true;
+  });
+  const concludedExperiments = allExperiments.filter(e => {
+    if (e.status !== "concluded") return false;
+    if (projectId && !(e.project || []).includes(projectId)) return false;
+    return true;
+  });
+
+  if (activeExperiments.length) {
+    lines.push("## Active Experiments");
+    for (const exp of activeExperiments) {
+      lines.push(`- **${exp.name}** (\`${exp.id}\`)`);
+      lines.push(`  Hypothesis: ${exp.hypothesis}`);
+      const obs = exp.observations || [];
+      if (obs.length) {
+        const pos = obs.filter(o => o.sentiment === "positive").length;
+        const neg = obs.filter(o => o.sentiment === "negative").length;
+        const neu = obs.filter(o => o.sentiment === "neutral").length;
+        lines.push(`  Observations: ${obs.length} (${pos} positive, ${neg} negative, ${neu} neutral)`);
+        const recent = obs.slice(-2);
+        for (const o of recent) {
+          const icon = o.sentiment === "positive" ? "+" : o.sentiment === "negative" ? "-" : "~";
+          lines.push(`  [${icon}] ${o.text}`);
+        }
+      } else {
+        lines.push(`  No observations yet.`);
+      }
+    }
+    lines.push("");
+  }
+
+  if (concludedExperiments.length) {
+    lines.push("## Concluded Experiments");
+    for (const exp of concludedExperiments) {
+      const obs = exp.observations || [];
+      lines.push(`- **${exp.name}** — ${exp.conclusion || "no verdict"} (${obs.length} observations)`);
+    }
+    lines.push("");
   }
 
   // Append mission tasks when mission-scoped

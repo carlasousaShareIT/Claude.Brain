@@ -16,7 +16,7 @@ export function useProfiles() {
   })
 
   const updateProfile = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; taskType?: string; sections?: SectionName[]; tags?: string[]; project?: string | null }) =>
+    mutationFn: ({ id, ...body }: { id: string; name?: string; taskType?: string; sections?: SectionName[]; tags?: string[]; project?: string | null; model?: string; role?: string; systemPrompt?: string; constraints?: string[] }) =>
       api.updateProfile(id, body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['profiles'] }),
   })

@@ -4,8 +4,8 @@ A persistent memory server and dashboard for [Claude Code](https://docs.anthropi
 
 ## What it does
 
-- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local `brain.json` file with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping, mission tracking, and personal reminders.
-- **Dashboard** (React 19 + Vite) — visual UI to browse, search, annotate, and manage brain entries. Includes a neural map visualization, mission tracker, reminders tab, metrics view, and a command palette for quick operations.
+- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local `brain.json` file with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping, mission tracking, agent profiles, and personal reminders.
+- **Dashboard** (React 19 + Vite) — visual UI to browse, search, annotate, and manage brain entries. Includes a neural map visualization, mission tracker, agent profiles manager, reminders tab, metrics view, and a command palette for quick operations.
 
 ## Prerequisites
 
@@ -74,6 +74,10 @@ If the file (or its parent directory) doesn't exist, the server creates it with 
 | POST | `/memory/archive` | Archive an entry |
 | GET | `/memory/archived` | List archived entries |
 | POST | `/memory/annotate` | Add annotation to an entry |
+| GET | `/memory/profiles` | List agent profiles |
+| POST | `/memory/profiles` | Create an agent profile |
+| PATCH | `/memory/profiles/:id` | Update an agent profile |
+| DELETE | `/memory/profiles/:id` | Delete an agent profile |
 | GET | `/memory/projects` | List projects |
 | POST | `/memory/projects` | Add/update a project |
 | POST | `/missions` | Create a mission |
@@ -198,7 +202,34 @@ For teams that want Claude to factor past decisions into planning:
   from the task. The server returns which ones are missing. Write the missing ones.
 ```
 
-### 6. Agent context injection (optional)
+### 6. Agent profiles
+
+Profiles define reusable agent personas for subagents. Each profile combines context filtering (which brain sections and tags the agent sees) with a persona definition (model, role, system prompt, constraints).
+
+```bash
+# Create a profile
+curl -s -X POST http://localhost:7777/memory/profiles \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Senior Dev",
+    "taskType": "implementation",
+    "sections": ["architecture", "agentRules"],
+    "tags": [],
+    "model": "sonnet",
+    "role": "Implements features, one task at a time.",
+    "systemPrompt": "You are a senior developer. You receive a single task and execute it thoroughly...",
+    "constraints": ["One task at a time.", "Return raw data, not conclusions.", "Never commit or push."]
+  }'
+
+# Fetch context with persona for agent injection
+curl -s "http://localhost:7777/memory/context?profile=p-senior-dev"
+```
+
+The context endpoint returns an `## Agent Persona` block (model, role, system prompt, constraints) followed by the filtered brain entries. This gives the agent both its identity and the project knowledge it needs in one call.
+
+Profiles can also be managed from the dashboard sidebar.
+
+### 7. Agent context injection (optional)
 
 To pass brain context to subagents, create a helper script at `~/.claude/brain-context.sh`:
 
@@ -206,11 +237,14 @@ To pass brain context to subagents, create a helper script at `~/.claude/brain-c
 #!/usr/bin/env bash
 # Usage: bash brain-context.sh [project-id]
 #        bash brain-context.sh --mission <mission-id>
+#        bash brain-context.sh --profile <profile-id>
 
 URL="http://localhost:7777/memory/context"
 
 if [ "$1" = "--mission" ] && [ -n "$2" ]; then
   URL="${URL}?mission=${2}"
+elif [ "$1" = "--profile" ] && [ -n "$2" ]; then
+  URL="${URL}?profile=${2}"
 elif [ -n "$1" ]; then
   URL="${URL}?project=${1}"
 fi
@@ -228,8 +262,9 @@ fi
 Then in your `CLAUDE.md`, instruct Claude to inject brain context when spawning agents:
 
 ```markdown
-- **Inject brain into agent prompts.** Run `bash ~/.claude/brain-context.sh <active-project>`
-  and append the output to the agent's prompt as a "Project context" section.
+- **Inject brain into agent prompts.** Run `bash ~/.claude/brain-context.sh --profile p-<profile-id>`
+  to get the agent persona plus filtered brain context. Append the output to the agent's prompt.
+  Available profiles: p-senior-dev, p-reviewer, p-researcher, p-pr-reviewer, p-writer.
 ```
 
 ### Setting up projects
