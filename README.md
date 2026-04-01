@@ -4,7 +4,7 @@ A persistent memory server and dashboard for [Claude Code](https://docs.anthropi
 
 ## What it does
 
-- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local `brain.json` file with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping, mission tracking, agent profiles, and personal reminders.
+- **Brain server** (Express, port 7777) — REST API that Claude Code reads/writes during sessions. Stores entries in a local SQLite database (`brain.db`) with sections for `workingStyle`, `architecture`, `agentRules`, `decisions`, plus project scoping, mission tracking, agent profiles, and personal reminders. WAL mode ensures crash safety — no more data loss from mid-write failures.
 - **Dashboard** (React 19 + Vite) — visual UI to browse, search, annotate, and manage brain entries. Includes a neural map visualization, mission tracker, agent profiles manager, reminders tab, metrics view, and a command palette for quick operations.
 
 ## Prerequisites
@@ -48,15 +48,27 @@ npm run dev:client   # Vite dev server only
 
 ## Brain data
 
-The server stores all data in a `brain.json` file. By default it uses `~/.claude/brain.json` — the standard Claude Code config directory.
+The server stores all data in a SQLite database. By default it uses `~/.claude/brain.db` — the standard Claude Code config directory.
 
-To use a custom location, set the `BRAIN_FILE` environment variable:
+To use a custom location, set the `BRAIN_DB_FILE` environment variable:
 
 ```bash
-BRAIN_FILE=/path/to/my/brain.json npm run dev
+BRAIN_DB_FILE=/path/to/my/brain.db npm run dev
 ```
 
-If the file (or its parent directory) doesn't exist, the server creates it with an empty structure on first run.
+If the database doesn't exist, the server creates it with the full schema on first start. No manual setup needed.
+
+### Backups
+
+- **WAL mode** ensures writes survive crashes (even SIGKILL).
+- **Automatic backups** every 2 hours with 3-generation rotation (`brain.db.bak`, `.bak.1`, `.bak.2`).
+- **Startup backup** created each time the server starts.
+
+### Migration from brain.json
+
+If you have an existing `brain.json` file at `~/.claude/brain.json`, the server automatically migrates all data into SQLite on first run. The original file is backed up to `brain.json.pre-sqlite-bak` and left untouched. The migration is idempotent — it only runs once.
+
+To view the database, use [DB Browser for SQLite](https://sqlitebrowser.org/) or the VS Code extension "SQLite Viewer".
 
 ## API overview
 
@@ -283,5 +295,5 @@ A "General" project is created by default for cross-cutting entries.
 
 ## Tech stack
 
-- **Server:** Express 5, plain JS (ESM)
+- **Server:** Express 5, plain JS (ESM), SQLite (better-sqlite3)
 - **Client:** React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, TanStack React Query, shadcn/ui
