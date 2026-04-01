@@ -7,9 +7,11 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { BRAIN_FILE, loadBrain, saveBrain, runMigrations } from "./brain-store.js";
 import { startHeartbeat } from "./broadcast.js";
 import { mergeBrains } from "./merge-utils.js";
+import { getDb, DB_FILE, backupDb, startBackupSchedule, closeDb } from "./db.js";
+import { migrateJsonToDb } from "./migrate-json-to-db.js";
+import { getFullBrain } from "./db-store.js";
 
 import memoryRouter from "./routes/memory.js";
 import archiveRouter from "./routes/archive.js";
@@ -27,7 +29,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7777;
 
 console.log("__dirname:", __dirname);
-console.log("BRAIN_FILE:", BRAIN_FILE);
+console.log("DB_FILE:", DB_FILE);
+
+// Initialize SQLite database and run JSON migration
+getDb();
+migrateJsonToDb();
 
 const app = express();
 app.use(cors({
@@ -75,8 +81,7 @@ app.use("/missions", missionsRouter);
 app.use("/reminders", remindersRouter);
 app.use("/experiments", experimentsRouter);
 
-// Fix: POST /memory/merge needs mergeBrains — override the placeholder in memory router
-// The merge route is defined here since it needs cross-module import
+// POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {
   try {
     const incoming = req.body;
@@ -84,10 +89,11 @@ app.post("/memory/merge", (req, res, next) => {
       return res.status(400).json({ error: "Invalid body" });
     }
 
-    const server = loadBrain();
+    const server = getFullBrain();
     const merged = mergeBrains(server, incoming);
-    saveBrain(merged);
-    console.log("[brain] merged artifact storage into brain.json");
+    // Note: merge is a legacy operation — for now, return the merged view without persisting.
+    // Full merge-to-db support can be added later if needed.
+    console.log("[brain] merge requested (read-only in SQLite mode)");
     res.json(merged);
   } catch (err) {
     next(err);
@@ -109,15 +115,20 @@ app.get("/{*splat}", (req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-// Run one-time data migrations before accepting requests
-runMigrations();
+// Create initial backup and start periodic backup schedule
+backupDb();
+startBackupSchedule();
 
 // Start heartbeat for SSE
 startHeartbeat();
 
+// Graceful shutdown
+process.on("SIGINT", () => { closeDb(); process.exit(0); });
+process.on("SIGTERM", () => { closeDb(); process.exit(0); });
+
 app.listen(PORT, () => {
   console.log(`\n🧠 Brain server running at http://localhost:${PORT}`);
-  console.log(`   Brain file: ${BRAIN_FILE}`);
+  console.log(`   Database:   ${DB_FILE}`);
   console.log(`   UI:         http://localhost:${PORT}`);
   console.log(`   POST /memory            — write updates`);
   console.log(`   GET  /memory            — read brain`);

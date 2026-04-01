@@ -1,7 +1,7 @@
 // routes/webhooks.js — webhook registration and management
 
 import { Router } from "express";
-import { loadBrain, saveBrain } from "../brain-store.js";
+import { getWebhooks, addWebhook, removeWebhook } from "../db-store.js";
 
 const router = Router();
 
@@ -40,12 +40,9 @@ router.post("/memory/webhooks", (req, res) => {
   const urlError = validateWebhookUrl(url);
   if (urlError) return res.status(400).json({ error: urlError });
 
-  const brain = loadBrain();
-  const exists = brain.webhooks.some(wh => wh.url === url);
-  if (exists) return res.status(409).json({ error: "Webhook already registered" });
+  const result = addWebhook(url, events);
+  if (!result) return res.status(409).json({ error: "Webhook already registered" });
 
-  brain.webhooks.push({ url, events });
-  saveBrain(brain);
   console.log(`[brain] webhook registered: ${url} — events: ${events.join(", ")}`);
   res.json({ ok: true });
 });
@@ -55,20 +52,16 @@ router.delete("/memory/webhooks", (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "Missing url" });
 
-  const brain = loadBrain();
-  const before = brain.webhooks.length;
-  brain.webhooks = brain.webhooks.filter(wh => wh.url !== url);
-  if (brain.webhooks.length === before) return res.status(404).json({ error: "Webhook not found" });
+  const removed = removeWebhook(url);
+  if (!removed) return res.status(404).json({ error: "Webhook not found" });
 
-  saveBrain(brain);
   console.log(`[brain] webhook removed: ${url}`);
   res.json({ ok: true });
 });
 
 // GET /memory/webhooks — list registered webhooks
 router.get("/memory/webhooks", (req, res) => {
-  const brain = loadBrain();
-  res.json(brain.webhooks || []);
+  res.json(getWebhooks());
 });
 
 export default router;

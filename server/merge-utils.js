@@ -1,7 +1,10 @@
 // merge-utils.js — brain merge logic
 
 import { entryText } from "./entry-utils.js";
-import { DEFAULT_PROJECTS } from "./brain-store.js";
+
+const DEFAULT_PROJECTS = [
+  { id: "general", name: "General", repos: [], status: "active" },
+];
 
 // Merge two brain objects — union of all arrays, deduplicated
 export const mergeBrains = (a, b) => {

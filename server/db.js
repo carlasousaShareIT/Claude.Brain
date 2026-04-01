@@ -1,0 +1,287 @@
+// db.js — SQLite database initialization and schema management
+
+import Database from "better-sqlite3";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+// Resolve database file path: env var > ~/.claude/brain.db
+const defaultDbFile = path.join(os.homedir(), ".claude", "brain.db");
+export const DB_FILE = process.env.BRAIN_DB_FILE || defaultDbFile;
+
+let db = null;
+
+export const getDb = () => {
+  if (db) return db;
+  db = initDb();
+  return db;
+};
+
+const initDb = () => {
+  const dir = path.dirname(DB_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const instance = new Database(DB_FILE);
+
+  // Performance and safety pragmas
+  instance.pragma("journal_mode = WAL");
+  instance.pragma("foreign_keys = ON");
+  instance.pragma("busy_timeout = 5000");
+  instance.pragma("synchronous = NORMAL");
+
+  // Create schema if needed
+  createSchema(instance);
+
+  return instance;
+};
+
+const createSchema = (db) => {
+  db.exec(`
+    -- Schema version tracking
+    CREATE TABLE IF NOT EXISTS schema_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Core memory entries (workingStyle, architecture, agentRules)
+    CREATE TABLE IF NOT EXISTS entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      section TEXT NOT NULL CHECK (section IN ('workingStyle', 'architecture', 'agentRules')),
+      text TEXT NOT NULL,
+      confidence TEXT DEFAULT 'tentative' CHECK (confidence IN ('firm', 'tentative')),
+      source TEXT DEFAULT 'unknown',
+      session_id TEXT,
+      project TEXT DEFAULT '["general"]',
+      tags TEXT DEFAULT '[]',
+      annotations TEXT DEFAULT '[]',
+      history TEXT DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_touched TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_entries_section ON entries(section);
+    CREATE INDEX IF NOT EXISTS idx_entries_session_id ON entries(session_id);
+    CREATE INDEX IF NOT EXISTS idx_entries_created_at ON entries(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_entries_confidence ON entries(confidence);
+
+    -- Decisions (special entries with status tracking)
+    CREATE TABLE IF NOT EXISTS decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      decision TEXT NOT NULL,
+      status TEXT DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      confidence TEXT DEFAULT 'tentative' CHECK (confidence IN ('firm', 'tentative')),
+      source TEXT DEFAULT 'unknown',
+      session_id TEXT,
+      project TEXT DEFAULT '["general"]',
+      annotations TEXT DEFAULT '[]',
+      history TEXT DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_touched TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_decisions_status ON decisions(status);
+    CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_decisions_created_at ON decisions(created_at DESC);
+
+    -- Missions
+    CREATE TABLE IF NOT EXISTS missions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      project TEXT,
+      status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'abandoned')),
+      session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status);
+    CREATE INDEX IF NOT EXISTS idx_missions_project ON missions(project);
+
+    -- Mission tasks
+    CREATE TABLE IF NOT EXISTS mission_tasks (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'blocked')),
+      assigned_agent TEXT,
+      session_id TEXT,
+      output TEXT,
+      blockers TEXT DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      started_at TEXT,
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mission_tasks_mission_id ON mission_tasks(mission_id);
+    CREATE INDEX IF NOT EXISTS idx_mission_tasks_status ON mission_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_mission_tasks_assigned_agent ON mission_tasks(assigned_agent);
+
+    -- Reminders
+    CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'snoozed')),
+      priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),
+      due_date TEXT,
+      snoozed_until TEXT,
+      project TEXT DEFAULT '["general"]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);
+    CREATE INDEX IF NOT EXISTS idx_reminders_due_date ON reminders(due_date);
+
+    -- Experiments
+    CREATE TABLE IF NOT EXISTS experiments (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      hypothesis TEXT NOT NULL,
+      status TEXT DEFAULT 'active' CHECK (status IN ('active', 'concluded', 'abandoned')),
+      conclusion TEXT CHECK (conclusion IS NULL OR conclusion IN ('positive', 'negative', 'mixed')),
+      project TEXT DEFAULT '["general"]',
+      session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      concluded_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_experiments_status ON experiments(status);
+
+    -- Experiment observations
+    CREATE TABLE IF NOT EXISTS observations (
+      id TEXT PRIMARY KEY,
+      experiment_id TEXT NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      sentiment TEXT DEFAULT 'neutral' CHECK (sentiment IN ('positive', 'negative', 'neutral')),
+      source TEXT DEFAULT 'claude-session',
+      session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_observations_experiment_id ON observations(experiment_id);
+
+    -- Profiles
+    CREATE TABLE IF NOT EXISTS profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      task_type TEXT DEFAULT '',
+      project TEXT,
+      sections TEXT DEFAULT '["workingStyle","architecture","agentRules","decisions"]',
+      tags TEXT DEFAULT '[]',
+      model TEXT DEFAULT '',
+      role TEXT DEFAULT '',
+      system_prompt TEXT DEFAULT '',
+      constraints TEXT DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Projects
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      repos TEXT DEFAULT '[]',
+      status TEXT DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Webhooks
+    CREATE TABLE IF NOT EXISTS webhooks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL UNIQUE,
+      events TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Activity log
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      action TEXT NOT NULL,
+      section TEXT NOT NULL,
+      source TEXT DEFAULT 'unknown',
+      session_id TEXT,
+      value_summary TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_activity_log_session_id ON activity_log(session_id);
+
+    -- Archived entries (soft-delete)
+    CREATE TABLE IF NOT EXISTS archived (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      section TEXT NOT NULL,
+      text TEXT,
+      decision TEXT,
+      status TEXT,
+      confidence TEXT,
+      source TEXT,
+      session_id TEXT,
+      project TEXT DEFAULT '["general"]',
+      annotations TEXT DEFAULT '[]',
+      history TEXT DEFAULT '[]',
+      created_at TEXT,
+      last_touched TEXT,
+      archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_archived_section ON archived(section);
+  `);
+
+  // Set initial schema version if not present
+  const existing = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get();
+  if (!existing) {
+    db.prepare("INSERT INTO schema_meta (key, value) VALUES (?, ?)").run("schema_version", "1.0.0");
+    db.prepare("INSERT INTO schema_meta (key, value) VALUES (?, ?)").run("created_at", new Date().toISOString());
+  }
+
+  // Schema migration: add status column to archived table (v1.0.1)
+  const archivedCols = db.prepare("PRAGMA table_info(archived)").all().map(c => c.name);
+  if (!archivedCols.includes("status")) {
+    db.exec("ALTER TABLE archived ADD COLUMN status TEXT");
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.0.1");
+    console.log("[brain-db] migrated archived table: added status column");
+  }
+
+  // Ensure default "general" project exists
+  const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
+  if (!generalProject) {
+    db.prepare("INSERT INTO projects (id, name, repos, status) VALUES (?, ?, ?, ?)").run("general", "General", "[]", "active");
+  }
+};
+
+// Backup: copy db to .bak with rotation
+export const backupDb = () => {
+  if (!db) return;
+  try {
+    const bakFile = DB_FILE + ".bak";
+    // Rotate: .bak → .bak.1 → .bak.2
+    try { fs.renameSync(bakFile + ".1", bakFile + ".2"); } catch {}
+    try { fs.renameSync(bakFile, bakFile + ".1"); } catch {}
+    db.backup(bakFile).then(() => {
+      console.log(`[brain-db] backup created: ${bakFile}`);
+    }).catch(err => {
+      console.error(`[brain-db] backup failed: ${err.message}`);
+    });
+  } catch (err) {
+    console.error(`[brain-db] backup rotation failed: ${err.message}`);
+  }
+};
+
+// Start periodic backups (every 2 hours)
+export const startBackupSchedule = () => {
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  setInterval(backupDb, TWO_HOURS);
+  console.log("[brain-db] backup schedule started (every 2h)");
+};
+
+// Graceful shutdown
+export const closeDb = () => {
+  if (db) {
+    db.close();
+    db = null;
+    console.log("[brain-db] database closed");
+  }
+};
