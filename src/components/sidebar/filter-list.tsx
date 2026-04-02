@@ -38,7 +38,7 @@ function FilterButton({ label, filterKey, count, color, isActive, onClick, icon 
       <span
         className={cn(
           'text-[10px] tabular-nums',
-          isActive ? 'text-foreground/70' : 'text-[#62627a]',
+          isActive ? 'text-foreground/70' : 'text-[#8585a0]',
         )}
       >
         {count}
@@ -111,7 +111,7 @@ export function FilterList() {
         count={counts.archived}
         isActive={activeFilter === 'archived'}
         onClick={handleClick}
-        icon={<Archive className="size-3 text-[#62627a]" />}
+        icon={<Archive className="size-3 text-[#8585a0]" />}
       />
     </div>
   )

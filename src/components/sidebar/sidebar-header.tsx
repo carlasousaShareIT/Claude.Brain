@@ -71,7 +71,7 @@ export function SidebarHeader() {
       </p>
 
       {lastSync && (
-        <p className="mt-1 text-[10px] text-[#62627a]">
+        <p className="mt-1 text-[10px] text-[#8585a0]">
           Synced {lastSync.toLocaleTimeString()}
         </p>
       )}
@@ -91,7 +91,7 @@ export function SidebarHeader() {
                 <span
                   className={cn(
                     'inline-block size-1.5 rounded-full mr-1.5',
-                    p.status === 'active' ? 'bg-brain-green' : 'bg-[#62627a]',
+                    p.status === 'active' ? 'bg-brain-green' : 'bg-[#8585a0]',
                   )}
                 />
                 {p.name}
