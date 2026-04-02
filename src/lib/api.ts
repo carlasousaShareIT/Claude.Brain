@@ -203,8 +203,8 @@ export const api = {
   deleteMission: (id: string) =>
     apiFetch<{ ok: boolean }>(`/missions/${id}`, { method: 'DELETE' }),
 
-  addTasks: (missionId: string, body: { tasks: Array<{ description: string }> }) =>
-    apiFetch<Mission>(`/missions/${missionId}/tasks`, { method: 'POST', body: body as unknown as BodyInit }),
+  addTasks: (missionId: string, body: { tasks: Array<{ description: string; blockedBy?: string[] }> }) =>
+    apiFetch<Array<{ id: string; description: string; status: string; blockedBy: string[] }>>(`/missions/${missionId}/tasks`, { method: 'POST', body: body as unknown as BodyInit }),
 
   updateTask: (
     missionId: string,
@@ -215,6 +215,7 @@ export const api = {
       sessionId?: string;
       output?: string;
       blockers?: string[];
+      blockedBy?: string[];
     },
   ) =>
     apiFetch<Mission>(`/missions/${missionId}/tasks/${taskId}`, {
