@@ -12,6 +12,7 @@ import {
   getResumableMissions,
   getAgentStats,
   getNextTasks,
+  getMissionMetrics,
   getWebhooks,
   getTemplate,
   getTemplates,
@@ -106,6 +107,13 @@ router.delete("/templates/:id", (req, res) => {
 router.get("/agents", (req, res) => {
   const result = getAgentStats();
   res.json(result);
+});
+
+// GET /missions/:id/metrics — derived stats for a mission
+router.get("/:id/metrics", (req, res) => {
+  const metrics = getMissionMetrics(req.params.id);
+  if (!metrics) return res.status(404).json({ error: "Mission not found" });
+  res.json(metrics);
 });
 
 // GET /missions/:id/next — tasks ready to work on (no unresolved dependencies)

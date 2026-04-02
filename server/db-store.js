@@ -2237,6 +2237,63 @@ export const deleteTemplate = (id) => {
 };
 
 // ---------------------------------------------------------------------------
+// Mission metrics
+// ---------------------------------------------------------------------------
+
+export const getMissionMetrics = (missionId) => {
+  const db = getDb();
+  const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
+  if (!mission) return null;
+
+  const tasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ?").all(missionId);
+  if (tasks.length === 0) return { missionId, taskCount: 0, successRate: 0, avgDurationMs: 0, reworkRate: 0, agentCount: 0, parallelismFactor: 0 };
+
+  const completed = tasks.filter(t => t.status === "completed");
+  const blocked = tasks.filter(t => t.status === "blocked");
+  const successRate = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
+
+  // Avg duration of completed tasks (started_at → completed_at)
+  let totalDuration = 0;
+  let durationCount = 0;
+  for (const t of completed) {
+    if (t.started_at && t.completed_at) {
+      const dur = new Date(t.completed_at).getTime() - new Date(t.started_at).getTime();
+      if (dur > 0) { totalDuration += dur; durationCount++; }
+    }
+  }
+  const avgDurationMs = durationCount > 0 ? Math.round(totalDuration / durationCount) : 0;
+
+  // Rework rate: tasks that were completed, then had output updated (heuristic: tasks assigned to multiple agents)
+  // Simplified: tasks that were blocked at some point (had blockers set) then completed
+  const reworked = completed.filter(t => {
+    const blockers = t.blockers ? JSON.parse(t.blockers) : [];
+    return blockers.length > 0;
+  });
+  const reworkRate = completed.length > 0 ? Math.round((reworked.length / completed.length) * 100) : 0;
+
+  // Agent count: unique agents assigned
+  const agents = new Set(tasks.filter(t => t.assigned_agent).map(t => t.assigned_agent));
+
+  // Parallelism factor: max tasks in_progress or completed overlapping in time
+  // Simplified: count of unique agents that worked on tasks
+  const parallelismFactor = agents.size > 0 ? agents.size : 1;
+
+  return {
+    missionId,
+    taskCount: tasks.length,
+    completedCount: completed.length,
+    blockedCount: blocked.length,
+    pendingCount: tasks.filter(t => t.status === "pending").length,
+    inProgressCount: tasks.filter(t => t.status === "in_progress").length,
+    successRate,
+    avgDurationMs,
+    reworkRate,
+    agentCount: agents.size,
+    parallelismFactor,
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Task dependency graph
 // ---------------------------------------------------------------------------
 

@@ -26,6 +26,7 @@ import experimentsRouter from "./routes/experiments.js";
 import sessionsRouter from "./routes/sessions.js";
 import locksRouter from "./routes/locks.js";
 import agentsRouter from "./routes/agents.js";
+import orchestrationRouter from "./routes/orchestration.js";
 import sseRouter from "./routes/sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,6 +87,7 @@ app.use("/experiments", experimentsRouter);
 app.use("/sessions", sessionsRouter);
 app.use("/locks", locksRouter);
 app.use("/agents", agentsRouter);
+app.use("/orchestration", orchestrationRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {

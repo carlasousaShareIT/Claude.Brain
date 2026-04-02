@@ -20,6 +20,7 @@ export default defineConfig({
       '/sessions': 'http://localhost:7777',
       '/locks': 'http://localhost:7777',
       '/agents': 'http://localhost:7777',
+      '/orchestration': 'http://localhost:7777',
     },
   },
 })
