@@ -74,17 +74,23 @@ Created automatically on first start. Existing `~/.claude/brain.json` files are 
 | POST | `/sessions/:id/end` | End session with handoff. Body: `{handoff: {done, remaining, blocked}}`. |
 | GET | `/sessions` | List sessions. `?project=`, `?limit=`. |
 | GET | `/sessions/:id` | Single session. |
-| GET | `/sessions/latest/handoff` | Most recent handoff for session continuity. |
+| GET | `/sessions/latest/handoff` | Most recent handoff for session continuity. `?project=` to scope. |
+| GET | `/sessions/search?q=keyword` | Full-text search across handoff summaries, labels, projects. |
 | GET | `/memory/sessions` | Legacy: inferred sessions from entry metadata. |
 
 ### Missions
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/missions` | Create a mission with tasks. |
+| POST | `/missions` | Create a mission with tasks. Accepts optional `template` field to stamp from a template. |
 | GET | `/missions` | List missions. `?status=`, `?project=`. |
 | GET | `/missions/resume?project=id` | Resumable missions with pending tasks. |
 | GET | `/missions/agents` | Agent execution stats. |
+| POST | `/missions/templates` | Create a reusable mission template. Body: `{name, description, tasks}`. |
+| GET | `/missions/templates` | List templates. `?project=`. |
+| GET | `/missions/templates/:id` | Single template. |
+| PATCH | `/missions/templates/:id` | Update template. |
+| DELETE | `/missions/templates/:id` | Delete template. |
 | GET | `/missions/:id` | Single mission with tasks. |
 | PATCH | `/missions/:id` | Update mission. |
 | DELETE | `/missions/:id` | Delete mission. |

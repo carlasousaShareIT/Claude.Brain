@@ -12,6 +12,11 @@ import {
   getResumableMissions,
   getAgentStats,
   getWebhooks,
+  getTemplate,
+  getTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
 } from "../db-store.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
@@ -22,15 +27,26 @@ const router = Router();
 
 // POST /missions — create a mission
 router.post("/", (req, res) => {
-  const { name, project, sessionId, tasks } = req.body;
+  let { name, project, sessionId, tasks, template } = req.body;
+
+  // If using a template, resolve it
+  if (template) {
+    const tmpl = getTemplate(template);
+    if (!tmpl) return res.status(404).json({ error: `Template not found: ${template}` });
+    if (!name) name = tmpl.name;
+    if (!project && tmpl.project) project = tmpl.project;
+    // Template tasks first, then any additional tasks from the body
+    tasks = [...(tmpl.tasks || []), ...(tasks || [])];
+  }
+
   if (!name) return res.status(400).json({ error: "Missing name" });
 
   const mission = createMission({ name, project, sessionId, tasks });
   const now = new Date().toISOString();
 
-  broadcastEvent("mission-created", { mission, ts: now });
+  broadcastEvent("mission-created", { mission, template: template || null, ts: now });
   fireWebhooks({ webhooks: getWebhooks() }, "mission-created", "missions", mission.name);
-  console.log(`[brain] mission created: ${mission.id} — ${mission.name}`);
+  console.log(`[brain] mission created: ${mission.id} — ${mission.name}${template ? ` (from template ${template})` : ""}`);
   res.status(201).json(mission);
 });
 
@@ -40,6 +56,49 @@ router.get("/resume", (req, res) => {
   const projectFilter = req.query.project || "";
   const result = getResumableMissions(projectFilter);
   res.json(result);
+});
+
+// --- Template routes ---
+
+// POST /missions/templates — create a template
+router.post("/templates", (req, res) => {
+  const { name, description, project, tasks } = req.body;
+  if (!name) return res.status(400).json({ error: "Missing name" });
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    return res.status(400).json({ error: "Missing or empty tasks array" });
+  }
+  const template = createTemplate({ name, description, project, tasks });
+  console.log(`[brain] template created: ${template.id} — ${template.name}`);
+  res.status(201).json(template);
+});
+
+// GET /missions/templates — list templates
+router.get("/templates", (req, res) => {
+  const project = req.query.project || undefined;
+  res.json(getTemplates(project));
+});
+
+// GET /missions/templates/:id — single template
+router.get("/templates/:id", (req, res) => {
+  const template = getTemplate(req.params.id);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  res.json(template);
+});
+
+// PATCH /missions/templates/:id — update template
+router.patch("/templates/:id", (req, res) => {
+  const result = updateTemplate(req.params.id, req.body);
+  if (!result) return res.status(404).json({ error: "Template not found" });
+  console.log(`[brain] template updated: ${result.id}`);
+  res.json(result);
+});
+
+// DELETE /missions/templates/:id — delete template
+router.delete("/templates/:id", (req, res) => {
+  const deleted = deleteTemplate(req.params.id);
+  if (!deleted) return res.status(404).json({ error: "Template not found" });
+  console.log(`[brain] template deleted: ${req.params.id}`);
+  res.json({ ok: true });
 });
 
 // GET /missions/agents — agent execution stats
