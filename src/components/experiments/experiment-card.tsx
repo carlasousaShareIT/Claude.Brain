@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, MessageSquarePlus, CheckCircle2, XCircle, Tr
 import { cn, projectColor } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { EffectivenessPanel } from '@/components/experiments/effectiveness-panel'
 import { api } from '@/lib/api'
 import type { ExperimentSummary } from '@/lib/types'
 
@@ -274,9 +275,12 @@ export function ExperimentCard({ experiment, onConclude, onAbandon, onDelete, on
         </div>
       )}
 
-      {/* Expanded observations */}
+      {/* Expanded observations + effectiveness */}
       {expanded && (
-        <div className="mt-2 space-y-1.5 border-t border-white/5 pt-2 pl-7">
+        <div className="mt-2 space-y-3 border-t border-white/5 pt-2 pl-7">
+          {experiment.observationCount >= 4 && (
+            <EffectivenessPanel experimentId={experiment.id} />
+          )}
           <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a]">
             Observations ({experiment.observationCount})
           </p>

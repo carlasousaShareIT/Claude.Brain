@@ -16,12 +16,16 @@ interface UIState {
   sessionFilterId: string;
   graphProjectFilterId: string;
   serverLive: boolean;
+  commandPanelOpen: boolean;
+  helpExpanded: boolean;
   setActiveTab: (tab: UIState['activeTab']) => void;
   setActiveFilter: (filter: string) => void;
   setActiveProject: (project: string) => void;
   setSessionFilterId: (id: string) => void;
   setGraphProjectFilterId: (id: string) => void;
   setServerLive: (live: boolean) => void;
+  setCommandPanelOpen: (open: boolean) => void;
+  setHelpExpanded: (expanded: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -31,6 +35,8 @@ export const useUIStore = create<UIState>((set) => ({
   sessionFilterId: '',
   graphProjectFilterId: '',
   serverLive: false,
+  commandPanelOpen: false,
+  helpExpanded: false,
   setActiveTab: (tab) => {
     window.location.hash = tab;
     set({ activeTab: tab });
@@ -40,4 +46,6 @@ export const useUIStore = create<UIState>((set) => ({
   setSessionFilterId: (id) => set({ sessionFilterId: id }),
   setGraphProjectFilterId: (id) => set({ graphProjectFilterId: id }),
   setServerLive: (live) => set({ serverLive: live }),
+  setCommandPanelOpen: (open) => set({ commandPanelOpen: open }),
+  setHelpExpanded: (expanded) => set({ helpExpanded: expanded }),
 }));

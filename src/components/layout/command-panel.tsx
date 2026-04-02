@@ -434,7 +434,7 @@ export function CommandPanel() {
   }, []);
 
   return (
-    <aside className="flex flex-col w-[340px] flex-shrink-0 border-l border-[#62627a]/20 bg-brain-raised">
+    <aside className="flex flex-col h-full border-l border-[#62627a]/20 bg-brain-raised">
       <CommandHeader onClear={handleClear} />
       <Separator className="bg-[#62627a]/20" />
 

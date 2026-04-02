@@ -1,5 +1,6 @@
 import { useUIStore } from '@/stores/ui-store'
 import { TabHeader } from '@/components/tabs/tab-header'
+import { TabHelp } from '@/components/layout/tab-help'
 import { MissionsView } from '@/components/missions/missions-view'
 import { MetricsView } from '@/components/metrics/metrics-view'
 import { NeuralMapView } from '@/components/neural-map/neural-map-view'
@@ -13,6 +14,7 @@ export function MainPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <TabHeader />
+      <TabHelp />
       <div className="flex-1 overflow-hidden min-h-0">
         {activeTab === 'neural' && <NeuralMapView />}
         {activeTab === 'metrics' && <MetricsView />}

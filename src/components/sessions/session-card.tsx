@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { SessionTimeline } from './session-timeline'
+import { ScorecardWidget } from '@/components/orchestration/scorecard-widget'
 import type { SessionSummary } from '@/lib/types'
 
 interface SessionCardProps {
@@ -125,7 +126,12 @@ export function SessionCard({
           </div>
         </div>
 
-        {isExpanded && <SessionTimeline session={session} />}
+        {isExpanded && (
+          <>
+            <ScorecardWidget sessionId={session.id} />
+            <SessionTimeline session={session} />
+          </>
+        )}
       </CardContent>
     </Card>
   )

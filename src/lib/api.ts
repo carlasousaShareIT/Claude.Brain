@@ -277,6 +277,98 @@ export const api = {
 
   deleteExperiment: (id: string) =>
     apiFetch<{ ok: boolean }>(`/experiments/${id}`, { method: 'DELETE' }),
+
+  getExperimentEffectiveness: (id: string) =>
+    apiFetch<{
+      experimentId: string
+      name: string
+      hypothesis: string
+      status: string
+      observationCount: number
+      sentimentBreakdown: { positive: number; negative: number; neutral: number }
+      positiveRate: number
+      avgSuccessRate: number | null
+      avgReworkRate: number | null
+      trend: string
+      suggestConclude: boolean
+      suggestedConclusion: string | null
+    }>(`/experiments/${id}/effectiveness`),
+
+  // Locks
+  getLocks: (params?: { agent?: string; file?: string }) =>
+    apiFetch<Array<{
+      id: number
+      file: string
+      agent: string
+      sessionId: string | null
+      claimedAt: string
+      expiresAt: string
+    }>>(`/locks${qs({ agent: params?.agent, file: params?.file })}`),
+
+  claimLocks: (body: { files: string[]; agent: string; sessionId?: string }) =>
+    apiFetch<unknown>('/locks/claim', { method: 'POST', body: body as unknown as BodyInit }),
+
+  releaseLocks: (body: { files?: string[]; agent?: string }) =>
+    apiFetch<{ released: number }>('/locks/release', { method: 'POST', body: body as unknown as BodyInit }),
+
+  forceReleaseLock: (id: number) =>
+    apiFetch<{ ok: boolean }>(`/locks/${id}`, { method: 'DELETE' }),
+
+  // Agent results
+  getAgentResults: (params?: { session?: string; agent?: string; mission?: string }) =>
+    apiFetch<Array<{
+      id: string
+      agent: string
+      sessionId: string | null
+      missionId: string | null
+      taskId: string | null
+      branch: string | null
+      worktreePath: string | null
+      changedFiles: string[]
+      summary: string
+      createdAt: string
+    }>>(`/agents/results${qs({ session: params?.session, agent: params?.agent, mission: params?.mission })}`),
+
+  deleteAgentResult: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/agents/results/${id}`, { method: 'DELETE' }),
+
+  // Mission metrics
+  getMissionMetrics: (id: string) =>
+    apiFetch<{
+      missionId: string
+      taskCount: number
+      completedCount: number
+      blockedCount: number
+      pendingCount: number
+      inProgressCount: number
+      successRate: number
+      avgDurationMs: number
+      reworkRate: number
+      agentCount: number
+      parallelismFactor: number
+    }>(`/missions/${id}/metrics`),
+
+  // Orchestration
+  getOrchestrationAudit: (sessionId: string) =>
+    apiFetch<{
+      sessionId: string
+      label: string | null
+      project: string | null
+      totalChecks: number
+      passed: number
+      failed: number
+      findings: Array<{ check: string; passed: boolean; detail: string }>
+    }>(`/orchestration/audit${qs({ session: sessionId })}`),
+
+  getOrchestrationScore: (sessionId: string) =>
+    apiFetch<{
+      sessionId: string
+      label: string | null
+      project: string | null
+      score: number
+      maxScore: number
+      breakdown: Record<string, { weight: number; earned: number; passed: boolean; detail: string }>
+    }>(`/orchestration/score${qs({ session: sessionId })}`),
 };
 
 export { ApiError };
