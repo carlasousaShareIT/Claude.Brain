@@ -13,15 +13,14 @@ import {
 } from "../db-store.js";
 import { detectSection } from "../entry-utils.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
+import { getDb } from "../db.js";
 
 const router = Router();
 
-// POST /memory — orchestrator sends updates here
-router.post("/memory", (req, res) => {
-  const { section, action, value, source, sessionId, confidence, project } = req.body;
-
+// Helper: process a single memory operation. Returns { ok, section, action, valText } or throws.
+function processMemoryOp({ section, action, value, source, sessionId, confidence, project }) {
   if (!section || !action || !value) {
-    return res.status(400).json({ error: "Missing section, action, or value" });
+    throw new Error("Missing section, action, or value");
   }
 
   const valText = typeof value === "string" ? value : (value.text || value.decision || value);
@@ -69,13 +68,59 @@ router.post("/memory", (req, res) => {
       updateEntry(section, oldText, newText, { source, sessionId, confidence, project });
     }
   } else {
-    return res.status(400).json({ error: `Unknown section: ${section}` });
+    throw new Error(`Unknown section: ${section}`);
   }
 
-  fireWebhooks({ webhooks: getWebhooks() }, action, section, valText);
-  broadcastEvent(action, { section, text: valText, action, source: source || "unknown", ts: new Date().toISOString() });
-  console.log(`[brain] ${section}:${action} — ${JSON.stringify(valText).slice(0, 80)}`);
-  res.json({ ok: true });
+  return { ok: true, section, action, valText };
+}
+
+// POST /memory — orchestrator sends updates here
+router.post("/memory", (req, res) => {
+  try {
+    const result = processMemoryOp(req.body);
+    fireWebhooks({ webhooks: getWebhooks() }, result.action, result.section, result.valText);
+    broadcastEvent(result.action, { section: result.section, text: result.valText, action: result.action, source: req.body.source || "unknown", ts: new Date().toISOString() });
+    console.log(`[brain] ${result.section}:${result.action} — ${JSON.stringify(result.valText).slice(0, 80)}`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /memory/batch — process multiple memory operations in a single request
+router.post("/memory/batch", (req, res) => {
+  const { operations } = req.body;
+
+  if (!operations || !Array.isArray(operations) || operations.length === 0) {
+    return res.status(400).json({ error: "Missing or empty operations array" });
+  }
+
+  const results = [];
+  const errors = [];
+  const successOps = [];
+
+  const batchRun = getDb().transaction((ops) => {
+    for (let i = 0; i < ops.length; i++) {
+      try {
+        const result = processMemoryOp(ops[i]);
+        results.push({ index: i, ok: true, section: result.section, action: result.action });
+        successOps.push({ result, source: ops[i].source });
+      } catch (err) {
+        errors.push({ index: i, error: err.message });
+      }
+    }
+  });
+
+  batchRun(operations);
+
+  // Fire webhooks and broadcast SSE events for each successful operation (outside transaction)
+  for (const { result, source } of successOps) {
+    fireWebhooks({ webhooks: getWebhooks() }, result.action, result.section, result.valText);
+    broadcastEvent(result.action, { section: result.section, text: result.valText, action: result.action, source: source || "unknown", ts: new Date().toISOString() });
+    console.log(`[brain] batch ${result.section}:${result.action} — ${JSON.stringify(result.valText).slice(0, 80)}`);
+  }
+
+  res.json({ ok: true, results, errors });
 });
 
 // GET /memory — artifact polls this
@@ -189,11 +234,13 @@ router.get("/memory/context", (req, res) => {
   const projectId = req.query.project || "";
   const missionId = req.query.mission || "";
   const profileId = req.query.profile || "";
+  const format = req.query.format || "";
 
   const result = getContextMarkdown({
     projectId: projectId || undefined,
     missionId: missionId || undefined,
     profileId: profileId || undefined,
+    format: format || undefined,
   });
 
   // Check for error objects returned by db-store

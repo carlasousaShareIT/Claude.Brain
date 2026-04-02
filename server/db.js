@@ -245,6 +245,25 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated archived table: added status column");
   }
 
+  // Schema migration: add sessions table (v1.1.0)
+  const sessionTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").get();
+  if (!sessionTableExists) {
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        label TEXT,
+        project TEXT,
+        started_at TEXT NOT NULL DEFAULT (datetime('now')),
+        ended_at TEXT,
+        handoff TEXT
+      );
+      CREATE INDEX idx_sessions_started_at ON sessions(started_at DESC);
+      CREATE INDEX idx_sessions_project ON sessions(project);
+    `);
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.1.0");
+    console.log("[brain-db] migrated: added sessions table");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

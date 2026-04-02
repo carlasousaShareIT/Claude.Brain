@@ -1424,7 +1424,8 @@ export const clearLog = () => {
 // Context (the big one)
 // ---------------------------------------------------------------------------
 
-export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
+export const getContextMarkdown = ({ projectId, missionId, profileId, format }) => {
+  const compact = format === "compact";
   const db = getDb();
 
   // Resolve mission → project
@@ -1472,6 +1473,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
 
   const formatEntry = (e, textField = "text") => {
     const t = e[textField] || "";
+    if (compact) return `- ${t}`;
     const conf = e.confidence ? ` [${e.confidence}]` : "";
     return `- ${t}${conf}`;
   };
@@ -1479,12 +1481,13 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
   const lines = [];
 
   // Header
+  const headerPrefix = compact ? "# Context" : "# Brain Context";
   if (mission) {
     const proj = projectId ? allProjects.find(p => p.id === projectId) : null;
-    lines.push(`# Brain Context — Mission: ${mission.name}${proj ? ` (${proj.name})` : ""}`);
+    lines.push(`${headerPrefix} — Mission: ${mission.name}${proj ? ` (${proj.name})` : ""}`);
     lines.push("");
   } else if (profileFilter) {
-    lines.push(`# Brain Context — Profile: ${profileFilter.name}`);
+    lines.push(`${headerPrefix} — Profile: ${profileFilter.name}`);
     lines.push("");
     if (profileFilter.model || profileFilter.role || profileFilter.systemPrompt || (profileFilter.constraints && profileFilter.constraints.length)) {
       lines.push("## Agent Persona");
@@ -1502,13 +1505,14 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
     }
   } else if (projectId) {
     const proj = allProjects.find(p => p.id === projectId);
-    lines.push(`# Brain Context — ${proj ? proj.name : projectId}`);
+    lines.push(`${headerPrefix} — ${proj ? proj.name : projectId}`);
     lines.push("");
   }
 
   // Sections
   const sectionNames = ["workingStyle", "architecture", "agentRules"];
   const sectionLabels = { workingStyle: "Working Style", architecture: "Architecture", agentRules: "Agent Rules" };
+  const compactLabels = { workingStyle: "Style", architecture: "Arch", agentRules: "Rules" };
 
   for (const section of sectionNames) {
     if (profileFilter && !profileFilter.sections.includes(section)) continue;
@@ -1517,7 +1521,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
     entries = filterByProfileTags(entries);
     entries = sortByConfidence(entries);
     if (entries.length) {
-      lines.push(`## ${sectionLabels[section]}`);
+      lines.push(`## ${compact ? compactLabels[section] : sectionLabels[section]}`);
       entries.forEach(e => lines.push(formatEntry(e)));
       lines.push("");
     }
@@ -1533,14 +1537,14 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
     const resolvedDecisions = decisions.filter(d => d.status === "resolved");
 
     if (openDecisions.length) {
-      lines.push("## Open Decisions");
-      sortByConfidence(openDecisions).forEach(d => lines.push(`- \u25CB ${d.decision}`));
+      lines.push(compact ? "## Decisions (open)" : "## Open Decisions");
+      sortByConfidence(openDecisions).forEach(d => lines.push(compact ? `- ${d.decision}` : `- \u25CB ${d.decision}`));
       lines.push("");
     }
 
     if (resolvedDecisions.length) {
-      lines.push("## Resolved Decisions");
-      sortByConfidence(resolvedDecisions).forEach(d => lines.push(`- \u2713 ${d.decision}`));
+      lines.push(compact ? "## Decisions (resolved)" : "## Resolved Decisions");
+      sortByConfidence(resolvedDecisions).forEach(d => lines.push(compact ? `- ${d.decision}` : `- \u2713 ${d.decision}`));
       lines.push("");
     }
   }
@@ -1574,33 +1578,40 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
   const concludedExperiments = allExps.filter(e => e.status === "concluded");
 
   if (activeExperiments.length) {
-    lines.push("## Active Experiments");
+    lines.push(compact ? "## Experiments" : "## Active Experiments");
     for (const exp of activeExperiments) {
-      lines.push(`- **${exp.name}** (\`${exp.id}\`)`);
-      lines.push(`  Hypothesis: ${exp.hypothesis}`);
-      const obs = exp.observations || [];
-      if (obs.length) {
-        const pos = obs.filter(o => o.sentiment === "positive").length;
-        const neg = obs.filter(o => o.sentiment === "negative").length;
-        const neu = obs.filter(o => o.sentiment === "neutral").length;
-        lines.push(`  Observations: ${obs.length} (${pos} positive, ${neg} negative, ${neu} neutral)`);
-        const recent = obs.slice(-2);
-        for (const o of recent) {
-          const icon = o.sentiment === "positive" ? "+" : o.sentiment === "negative" ? "-" : "~";
-          lines.push(`  [${icon}] ${o.text}`);
-        }
+      if (compact) {
+        const obs = exp.observations || [];
+        lines.push(`- ${exp.name} (${obs.length} obs)`);
       } else {
-        lines.push(`  No observations yet.`);
+        lines.push(`- **${exp.name}** (\`${exp.id}\`)`);
+        lines.push(`  Hypothesis: ${exp.hypothesis}`);
+        const obs = exp.observations || [];
+        if (obs.length) {
+          const pos = obs.filter(o => o.sentiment === "positive").length;
+          const neg = obs.filter(o => o.sentiment === "negative").length;
+          const neu = obs.filter(o => o.sentiment === "neutral").length;
+          lines.push(`  Observations: ${obs.length} (${pos} positive, ${neg} negative, ${neu} neutral)`);
+          const recent = obs.slice(-2);
+          for (const o of recent) {
+            const icon = o.sentiment === "positive" ? "+" : o.sentiment === "negative" ? "-" : "~";
+            lines.push(`  [${icon}] ${o.text}`);
+          }
+        } else {
+          lines.push(`  No observations yet.`);
+        }
       }
     }
     lines.push("");
   }
 
   if (concludedExperiments.length) {
-    lines.push("## Concluded Experiments");
+    lines.push(compact ? "## Experiments (concluded)" : "## Concluded Experiments");
     for (const exp of concludedExperiments) {
       const obs = exp.observations || [];
-      lines.push(`- **${exp.name}** — ${exp.conclusion || "no verdict"} (${obs.length} observations)`);
+      lines.push(compact
+        ? `- ${exp.name} — ${exp.conclusion || "no verdict"}`
+        : `- **${exp.name}** — ${exp.conclusion || "no verdict"} (${obs.length} observations)`);
     }
     lines.push("");
   }
@@ -1614,7 +1625,10 @@ export const getContextMarkdown = ({ projectId, missionId, profileId }) => {
     if (mission.createdAt) lines.push(`- **Created:** ${mission.createdAt}`);
     lines.push("");
     lines.push("### Tasks");
-    for (const t of (mission.tasks || [])) {
+    const missionTasks = compact
+      ? (mission.tasks || []).filter(t => t.status === "pending" || t.status === "in_progress")
+      : (mission.tasks || []);
+    for (const t of missionTasks) {
       const icon = statusIcon[t.status] || "?";
       let line = `- ${icon} \`${t.id}\` ${t.description}`;
       if (t.assignedAgent) line += ` (agent: ${t.assignedAgent})`;
@@ -2024,4 +2038,64 @@ export const getFullBrain = (projectId) => {
   }
 
   return brain;
+};
+
+// ---------------------------------------------------------------------------
+// Sessions (structured lifecycle tracking)
+// ---------------------------------------------------------------------------
+
+export const startSession = ({ id, label, project }) => {
+  const db = getDb();
+  const existing = db.prepare("SELECT id FROM sessions WHERE id = ?").get(id);
+  if (existing) {
+    const sets = [];
+    const params = [];
+    if (label !== undefined) { sets.push("label = ?"); params.push(label); }
+    if (project !== undefined) { sets.push("project = ?"); params.push(project); }
+    if (sets.length) {
+      params.push(id);
+      db.prepare(`UPDATE sessions SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+    }
+    return db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  }
+  db.prepare("INSERT INTO sessions (id, label, project) VALUES (?, ?, ?)").run(id, label || null, project || null);
+  return db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+};
+
+export const endSession = (id, { handoff } = {}) => {
+  const db = getDb();
+  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  if (!session) return null;
+  db.prepare("UPDATE sessions SET ended_at = datetime('now'), handoff = ? WHERE id = ?").run(
+    handoff ? JSON.stringify(handoff) : null, id
+  );
+  const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
+};
+
+export const getSessionById = (id) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  if (!row) return null;
+  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
+};
+
+export const listSessions = ({ limit = 50, project } = {}) => {
+  const db = getDb();
+  let sql = "SELECT * FROM sessions";
+  const params = [];
+  if (project) { sql += " WHERE project = ?"; params.push(project); }
+  sql += " ORDER BY started_at DESC LIMIT ?";
+  params.push(limit);
+  return db.prepare(sql).all(params).map(row => ({
+    ...row,
+    handoff: row.handoff ? JSON.parse(row.handoff) : null,
+  }));
+};
+
+export const getLatestHandoff = () => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM sessions WHERE handoff IS NOT NULL ORDER BY ended_at DESC LIMIT 1").get();
+  if (!row) return null;
+  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
 };

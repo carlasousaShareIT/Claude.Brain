@@ -23,6 +23,7 @@ import profilesRouter from "./routes/profiles.js";
 import missionsRouter from "./routes/missions.js";
 import remindersRouter from "./routes/reminders.js";
 import experimentsRouter from "./routes/experiments.js";
+import sessionsRouter from "./routes/sessions.js";
 import sseRouter from "./routes/sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,6 +81,7 @@ app.use(sseRouter);
 app.use("/missions", missionsRouter);
 app.use("/reminders", remindersRouter);
 app.use("/experiments", experimentsRouter);
+app.use("/sessions", sessionsRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {
@@ -174,5 +176,10 @@ app.listen(PORT, () => {
   console.log(`   GET  /experiments/:id            — single experiment with observations`);
   console.log(`   PATCH /experiments/:id           — update/conclude experiment`);
   console.log(`   POST /experiments/:id/observations — record observation`);
-  console.log(`   DELETE /experiments/:id          — delete experiment\n`);
+  console.log(`   DELETE /experiments/:id          — delete experiment`);
+  console.log(`   POST /sessions/start         — start a session`);
+  console.log(`   POST /sessions/:id/end       — end a session with handoff`);
+  console.log(`   GET  /sessions               — list sessions`);
+  console.log(`   GET  /sessions/latest/handoff — latest handoff summary`);
+  console.log(`   GET  /sessions/:id           — single session\n`);
 });
