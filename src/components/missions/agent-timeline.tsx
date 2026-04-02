@@ -174,10 +174,22 @@ export function AgentTimeline({ tasks }: AgentTimelineProps) {
                     >
                       {icon}
                     </span>
-                    {/* Description */}
-                    <span className="flex-1 min-w-0 text-foreground/70 leading-snug">
+                    {/* Description — links to task row above */}
+                    <a
+                      href={`#task-${task.id}`}
+                      className="flex-1 min-w-0 text-foreground/70 leading-snug hover:text-foreground transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        const el = document.getElementById(`task-${task.id}`)
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          el.classList.add('ring-1', 'ring-brain-accent/40', 'bg-brain-hover/30')
+                          setTimeout(() => el.classList.remove('ring-1', 'ring-brain-accent/40', 'bg-brain-hover/30'), 2000)
+                        }
+                      }}
+                    >
                       {truncate(task.description, 80)}
-                    </span>
+                    </a>
                     {/* Time + duration */}
                     <div className="shrink-0 flex items-center gap-1.5 text-[10px] text-[#8585a0] tabular-nums">
                       <span>{formatTime(task.startedAt!)}</span>
