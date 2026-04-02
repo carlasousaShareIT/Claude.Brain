@@ -133,6 +133,7 @@ app.listen(PORT, () => {
   console.log(`   Database:   ${DB_FILE}`);
   console.log(`   UI:         http://localhost:${PORT}`);
   console.log(`   POST /memory            — write updates`);
+  console.log(`   POST /memory/batch      — batch write (multiple ops)`);
   console.log(`   GET  /memory            — read brain`);
   console.log(`   GET  /memory/search     — search entries (?q=keyword)`);
   console.log(`   GET  /memory/sessions   — list sessions`);

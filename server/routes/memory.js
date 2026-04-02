@@ -111,7 +111,11 @@ router.post("/memory/batch", (req, res) => {
     }
   });
 
-  batchRun(operations);
+  try {
+    batchRun(operations);
+  } catch (err) {
+    return res.status(500).json({ error: `Batch transaction failed: ${err.message}` });
+  }
 
   // Fire webhooks and broadcast SSE events for each successful operation (outside transaction)
   for (const { result, source } of successOps) {
@@ -120,7 +124,7 @@ router.post("/memory/batch", (req, res) => {
     console.log(`[brain] batch ${result.section}:${result.action} — ${JSON.stringify(result.valText).slice(0, 80)}`);
   }
 
-  res.json({ ok: true, results, errors });
+  res.json({ ok: errors.length === 0, results, errors });
 });
 
 // GET /memory — artifact polls this

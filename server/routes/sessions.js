@@ -21,6 +21,7 @@ router.post("/:id/end", (req, res) => {
   const { handoff } = req.body || {};
   const session = endSession(req.params.id, { handoff });
   if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.error === "already_ended") return res.status(409).json({ error: session.message });
   broadcastEvent("session:end", { id: req.params.id, ts: new Date().toISOString() });
   console.log(`[brain] session:end ${req.params.id}`);
   res.json(session);

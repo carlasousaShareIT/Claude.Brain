@@ -2066,6 +2066,7 @@ export const endSession = (id, { handoff } = {}) => {
   const db = getDb();
   const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
   if (!session) return null;
+  if (session.ended_at) return { error: "already_ended", message: `Session ${id} already ended at ${session.ended_at}` };
   db.prepare("UPDATE sessions SET ended_at = datetime('now'), handoff = ? WHERE id = ?").run(
     handoff ? JSON.stringify(handoff) : null, id
   );
@@ -2087,7 +2088,7 @@ export const listSessions = ({ limit = 50, project } = {}) => {
   if (project) { sql += " WHERE project = ?"; params.push(project); }
   sql += " ORDER BY started_at DESC LIMIT ?";
   params.push(limit);
-  return db.prepare(sql).all(params).map(row => ({
+  return db.prepare(sql).all(...params).map(row => ({
     ...row,
     handoff: row.handoff ? JSON.parse(row.handoff) : null,
   }));
