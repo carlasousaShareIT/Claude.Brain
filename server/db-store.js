@@ -2093,9 +2093,13 @@ export const listSessions = ({ limit = 50, project } = {}) => {
   }));
 };
 
-export const getLatestHandoff = () => {
+export const getLatestHandoff = (project) => {
   const db = getDb();
-  const row = db.prepare("SELECT * FROM sessions WHERE handoff IS NOT NULL ORDER BY ended_at DESC LIMIT 1").get();
+  let sql = "SELECT * FROM sessions WHERE handoff IS NOT NULL";
+  const params = [];
+  if (project) { sql += " AND project = ?"; params.push(project); }
+  sql += " ORDER BY ended_at DESC LIMIT 1";
+  const row = db.prepare(sql).get(...params);
   if (!row) return null;
   return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
 };

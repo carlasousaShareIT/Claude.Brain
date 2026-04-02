@@ -35,7 +35,8 @@ router.get("/", (req, res) => {
 
 // GET /latest/handoff — most recent handoff for continuity
 router.get("/latest/handoff", (req, res) => {
-  const result = getLatestHandoff();
+  const project = req.query.project || undefined;
+  const result = getLatestHandoff(project);
   if (!result) return res.status(404).json({ error: "No sessions with handoff found" });
   res.json(result);
 });
