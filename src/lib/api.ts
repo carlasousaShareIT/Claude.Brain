@@ -248,7 +248,7 @@ export const api = {
   createReminder: (body: { text: string; dueDate?: string; priority?: string; project?: string[] }) =>
     apiFetch<Reminder>('/reminders', { method: 'POST', body: body as unknown as BodyInit }),
 
-  updateReminder: (id: string, body: { text?: string; status?: string; priority?: string; dueDate?: string; snoozedUntil?: string; project?: string[] }) =>
+  updateReminder: (id: string, body: { text?: string; status?: string; priority?: string; dueDate?: string | null; snoozedUntil?: string; project?: string[] }) =>
     apiFetch<Reminder>(`/reminders/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
 
   deleteReminder: (id: string) =>

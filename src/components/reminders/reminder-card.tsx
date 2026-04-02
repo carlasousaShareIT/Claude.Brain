@@ -1,4 +1,5 @@
-import { Clock, Trash2 } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { Calendar, Clock, Trash2 } from 'lucide-react'
 import { cn, projectColor } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,19 +10,43 @@ interface ReminderCardProps {
   onMarkDone: (id: string) => void
   onSnooze: (id: string) => void
   onDelete: (id: string) => void
+  onUpdateDueDate: (id: string, dueDate: string | null) => void
 }
 
 function formatDueDate(dueDate: string): { label: string; overdue: boolean } {
   const due = new Date(dueDate)
   const now = new Date()
-  const overdue = due < now
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const overdue = due < today
   const label = due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   return { label, overdue }
 }
 
-export function ReminderCard({ reminder, onMarkDone, onSnooze, onDelete }: ReminderCardProps) {
+function toDateInputValue(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function ReminderCard({ reminder, onMarkDone, onSnooze, onDelete, onUpdateDueDate }: ReminderCardProps) {
   const isDone = reminder.status === 'done'
   const due = reminder.dueDate ? formatDueDate(reminder.dueDate) : null
+  const [editingDate, setEditingDate] = useState(false)
+
+  const handleDateChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value
+      if (val) {
+        onUpdateDueDate(reminder.id, new Date(val + 'T00:00:00').toISOString())
+      } else {
+        onUpdateDueDate(reminder.id, null)
+      }
+      setEditingDate(false)
+    },
+    [reminder.id, onUpdateDueDate],
+  )
 
   return (
     <div
@@ -68,7 +93,7 @@ export function ReminderCard({ reminder, onMarkDone, onSnooze, onDelete }: Remin
         </p>
 
         {/* Meta row */}
-        {(reminder.priority !== 'normal' || due || reminder.project.length > 0) && (
+        {(reminder.priority !== 'normal' || due || editingDate || reminder.project.length > 0) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {reminder.priority === 'high' && (
               <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-500/20 text-red-400">
@@ -80,16 +105,29 @@ export function ReminderCard({ reminder, onMarkDone, onSnooze, onDelete }: Remin
                 low
               </span>
             )}
-            {due && (
-              <span
+            {editingDate ? (
+              <input
+                autoFocus
+                type="date"
+                defaultValue={reminder.dueDate ? toDateInputValue(reminder.dueDate) : ''}
+                onChange={handleDateChange}
+                onBlur={() => setEditingDate(false)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setEditingDate(false) }}
+                className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#62627a] focus:outline-none [color-scheme:dark]"
+              />
+            ) : due ? (
+              <button
+                onClick={() => !isDone && setEditingDate(true)}
                 className={cn(
-                  'text-[10px]',
+                  'text-[10px] transition-colors',
                   due.overdue ? 'font-medium text-red-400' : 'text-[#62627a]',
+                  !isDone && 'hover:text-foreground/80 cursor-pointer',
                 )}
+                title="Click to edit due date."
               >
                 {due.overdue ? 'Overdue' : due.label}
-              </span>
-            )}
+              </button>
+            ) : null}
             {reminder.project.map((p) => (
               <span
                 key={p}
@@ -105,6 +143,24 @@ export function ReminderCard({ reminder, onMarkDone, onSnooze, onDelete }: Remin
 
       {/* Action buttons — visible on hover */}
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {!isDone && !due && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-[#62627a] hover:text-foreground"
+                  onClick={() => setEditingDate(true)}
+                  aria-label="Set due date"
+                />
+              }
+            >
+              <Calendar className="h-3.5 w-3.5" />
+            </TooltipTrigger>
+            <TooltipContent side="top">Set due date.</TooltipContent>
+          </Tooltip>
+        )}
         {!isDone && (
           <Tooltip>
             <TooltipTrigger
