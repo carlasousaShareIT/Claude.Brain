@@ -10,6 +10,7 @@ import {
   addObservation,
   updateObservation,
   deleteObservation,
+  getExperimentEffectiveness,
   getWebhooks,
 } from "../db-store.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
@@ -42,6 +43,13 @@ router.get("/", (req, res) => {
   const projectFilter = req.query.project || "";
   const summary = getExperiments(statusFilter, projectFilter);
   res.json(summary);
+});
+
+// GET /experiments/:id/effectiveness — before/after comparison
+router.get("/:id/effectiveness", (req, res) => {
+  const result = getExperimentEffectiveness(req.params.id);
+  if (!result) return res.status(404).json({ error: "Experiment not found" });
+  res.json(result);
 });
 
 // GET /experiments/:id — single experiment with all observations

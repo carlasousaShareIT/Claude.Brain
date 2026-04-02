@@ -196,7 +196,7 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
     return res.status(400).json({ error: `Invalid status "${status}". Must be one of: ${[...VALID_TASK_STATUSES].join(", ")}` });
   }
 
-  const { task, missionAutoCompleted, unblockedTasks } = updateTask(req.params.id, req.params.taskId, {
+  const { task, missionAutoCompleted, unblockedTasks, autoObservations } = updateTask(req.params.id, req.params.taskId, {
     status, assignedAgent, sessionId, output, blockers, blockedBy, description,
   });
 
@@ -214,6 +214,12 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
     broadcastEvent("mission-updated", { mission, ts: now });
     fireWebhooks({ webhooks: getWebhooks() }, "mission-updated", "missions", `${mission.name} auto-completed`);
     console.log(`[brain] mission auto-completed: ${mission.id}`);
+
+    // Log auto-observations generated for experiments
+    for (const obs of (autoObservations || [])) {
+      broadcastEvent("observation-added", { experimentId: obs.experimentId, observation: obs, ts: now });
+      console.log(`[brain] auto-observation for experiment ${obs.experimentName}: ${obs.sentiment}`);
+    }
   }
 
   // Broadcast events for auto-unblocked tasks

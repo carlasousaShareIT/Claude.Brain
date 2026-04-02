@@ -661,15 +661,18 @@ export const updateTask = (missionId, taskId, updates) => {
 
   // Check auto-complete
   let missionAutoCompleted = false;
+  let autoObservations = [];
   const allTaskStatuses = db.prepare("SELECT status FROM mission_tasks WHERE mission_id = ?").all(missionId);
   const allCompleted = allTaskStatuses.length > 0 && allTaskStatuses.every(t => t.status === "completed");
   if (allCompleted && mission.status === "active") {
     db.prepare("UPDATE missions SET status = 'completed', completed_at = ? WHERE id = ?").run(ts, missionId);
     missionAutoCompleted = true;
+    // Auto-observe experiments on mission completion
+    autoObservations = autoObserveOnMissionComplete(missionId);
   }
 
   const updatedTask = rowToTask(db.prepare("SELECT * FROM mission_tasks WHERE id = ?").get(taskId));
-  return { task: updatedTask, missionAutoCompleted, unblockedTasks };
+  return { task: updatedTask, missionAutoCompleted, unblockedTasks, autoObservations };
 };
 
 export const getResumableMissions = (projectFilter) => {
@@ -1042,6 +1045,68 @@ export const deleteObservation = (experimentId, obsId) => {
   const db = getDb();
   const result = db.prepare("DELETE FROM observations WHERE id = ? AND experiment_id = ?").run(obsId, experimentId);
   return result.changes > 0;
+};
+
+export const getExperimentEffectiveness = (experimentId) => {
+  const db = getDb();
+  const exp = db.prepare("SELECT * FROM experiments WHERE id = ?").get(experimentId);
+  if (!exp) return null;
+
+  const observations = db.prepare("SELECT * FROM observations WHERE experiment_id = ? ORDER BY created_at").all(experimentId).map(rowToObservation);
+  const positive = observations.filter(o => o.sentiment === "positive").length;
+  const negative = observations.filter(o => o.sentiment === "negative").length;
+  const neutral = observations.filter(o => o.sentiment === "neutral").length;
+  const total = observations.length;
+
+  // Auto-observations from missions contain metrics we can parse
+  const autoObs = observations.filter(o => o.source === "auto-mission-complete");
+  const successRates = autoObs.map(o => {
+    const match = o.text.match(/(\d+)% success/);
+    return match ? parseInt(match[1]) : null;
+  }).filter(r => r !== null);
+  const avgSuccessRate = successRates.length > 0 ? Math.round(successRates.reduce((a, b) => a + b, 0) / successRates.length) : null;
+
+  const reworkRates = autoObs.map(o => {
+    const match = o.text.match(/(\d+)% rework/);
+    return match ? parseInt(match[1]) : null;
+  }).filter(r => r !== null);
+  const avgReworkRate = reworkRates.length > 0 ? Math.round(reworkRates.reduce((a, b) => a + b, 0) / reworkRates.length) : null;
+
+  // Trend: split observations into first half vs second half
+  let trend = "insufficient_data";
+  if (total >= 4) {
+    const mid = Math.floor(total / 2);
+    const firstHalf = observations.slice(0, mid);
+    const secondHalf = observations.slice(mid);
+    const firstPositiveRate = firstHalf.filter(o => o.sentiment === "positive").length / firstHalf.length;
+    const secondPositiveRate = secondHalf.filter(o => o.sentiment === "positive").length / secondHalf.length;
+    trend = secondPositiveRate > firstPositiveRate + 0.1 ? "improving"
+      : secondPositiveRate < firstPositiveRate - 0.1 ? "declining"
+      : "stable";
+  }
+
+  // Suggest concluding if clear signal
+  let suggestConclude = false;
+  let suggestedConclusion = null;
+  if (total >= 10) {
+    if (positive / total >= 0.8) { suggestConclude = true; suggestedConclusion = "positive"; }
+    else if (negative / total >= 0.8) { suggestConclude = true; suggestedConclusion = "negative"; }
+  }
+
+  return {
+    experimentId: exp.id,
+    name: exp.name,
+    hypothesis: exp.hypothesis,
+    status: exp.status,
+    observationCount: total,
+    sentimentBreakdown: { positive, negative, neutral },
+    positiveRate: total > 0 ? Math.round((positive / total) * 100) : 0,
+    avgSuccessRate,
+    avgReworkRate,
+    trend,
+    suggestConclude,
+    suggestedConclusion,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -2234,6 +2299,58 @@ export const deleteTemplate = (id) => {
   if (!existing) return false;
   db.prepare("DELETE FROM mission_templates WHERE id = ?").run(id);
   return true;
+};
+
+// ---------------------------------------------------------------------------
+// Auto-observations for experiments on mission completion
+// ---------------------------------------------------------------------------
+
+export const autoObserveOnMissionComplete = (missionId) => {
+  const db = getDb();
+  const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
+  if (!mission) return [];
+
+  // Find active experiments whose project overlaps with this mission's project
+  const activeExps = db.prepare("SELECT * FROM experiments WHERE status = 'active'").all();
+  const missionProject = mission.project || "general";
+  const matchingExps = activeExps.filter(e => {
+    const expProjects = parseJson(e.project, ["general"]);
+    return expProjects.includes(missionProject) || expProjects.includes("general");
+  });
+
+  if (matchingExps.length === 0) return [];
+
+  // Compute mission metrics inline (lightweight)
+  const tasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ?").all(missionId);
+  const completed = tasks.filter(t => t.status === "completed");
+  const successRate = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
+  const reworked = completed.filter(t => {
+    const blockers = parseJson(t.blockers, []);
+    return blockers.length > 0;
+  });
+  const reworkRate = completed.length > 0 ? Math.round((reworked.length / completed.length) * 100) : 0;
+
+  const observations = [];
+  const ts = now();
+
+  for (const exp of matchingExps) {
+    const text = `Auto-observation from mission "${mission.name}": ${completed.length}/${tasks.length} tasks completed (${successRate}% success), ${reworkRate}% rework rate.`;
+    const sentiment = successRate >= 80 ? "positive" : successRate >= 50 ? "neutral" : "negative";
+
+    const existingIds = new Set(
+      db.prepare("SELECT id FROM observations WHERE experiment_id = ?").all(exp.id).map(r => r.id)
+    );
+    const obsId = slugify(text, "o", existingIds);
+
+    db.prepare(`
+      INSERT INTO observations (id, experiment_id, text, sentiment, source, session_id, created_at)
+      VALUES (?, ?, ?, ?, 'auto-mission-complete', NULL, ?)
+    `).run(obsId, exp.id, text, sentiment, ts);
+
+    observations.push({ experimentId: exp.id, experimentName: exp.name, observationId: obsId, text, sentiment });
+  }
+
+  return observations;
 };
 
 // ---------------------------------------------------------------------------
