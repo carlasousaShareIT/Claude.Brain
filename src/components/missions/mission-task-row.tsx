@@ -52,11 +52,12 @@ export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRow
   )
 
   return (
-    <div className="group/task">
+    <div className="group/task" id={`task-${task.id}`}>
       <div
         className={cn(
           'flex items-start gap-2 rounded-md border-l-2 py-1.5 pl-2.5 pr-1.5 transition-colors',
           'hover:bg-brain-hover/50',
+          'target:ring-1 target:ring-brain-accent/40 target:bg-brain-hover/30',
           STATUS_BORDER_COLOR[task.status],
         )}
       >

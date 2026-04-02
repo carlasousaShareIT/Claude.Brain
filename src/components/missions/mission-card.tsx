@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MissionProgress } from './mission-progress'
 import { MissionTaskRow } from './mission-task-row'
+import { AgentTimeline } from './agent-timeline'
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { MissionSummary } from '@/lib/types'
@@ -150,6 +151,9 @@ export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdate
               ))}
             </div>
           )}
+
+          {/* Agent execution timeline */}
+          <AgentTimeline tasks={tasks} />
         </CardContent>
       )}
     </Card>

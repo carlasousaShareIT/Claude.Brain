@@ -1,4 +1,5 @@
 import { useMetrics } from '@/hooks/use-metrics'
+import { useAutoHealth } from '@/hooks/use-health'
 import { useUIStore } from '@/stores/ui-store'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MetricCard } from './metric-card'
@@ -12,6 +13,7 @@ import { HealthCard } from './health-card'
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
   const { data, isLoading } = useMetrics(activeProject || undefined)
+  const autoHealth = useAutoHealth(true)
 
   if (isLoading) {
     return (
@@ -74,7 +76,7 @@ export function MetricsView() {
           </MetricCard>
 
           <MetricCard title="Entry health" className="md:col-span-2">
-            <HealthCard />
+            <HealthCard autoHealth={{ data: autoHealth.data, isLoading: autoHealth.isLoading }} />
           </MetricCard>
         </div>
       </div>

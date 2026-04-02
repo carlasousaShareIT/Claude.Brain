@@ -17,7 +17,7 @@ export function useReminders(status?: string, project?: string) {
   });
 
   const updateReminder = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; text?: string; status?: string; priority?: string; dueDate?: string; snoozedUntil?: string; project?: string[] }) =>
+    mutationFn: ({ id, ...body }: { id: string; text?: string; status?: string; priority?: string; dueDate?: string | null; snoozedUntil?: string; project?: string[] }) =>
       api.updateReminder(id, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reminders'] });

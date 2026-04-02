@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { ChevronRight, ChevronDown, Plus, Trash2, Copy, X } from 'lucide-react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
+import { ChevronRight, ChevronDown, Plus, Trash2, Copy, X, GripVertical } from 'lucide-react'
 import { useProfiles } from '@/hooks/use-profiles'
+import { useBrain } from '@/hooks/use-brain'
 import { SECTION_COLORS, SECTION_LABELS, SECTIONS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import {
@@ -9,7 +10,59 @@ import {
   DialogTitle,
   DialogClose,
 } from '@/components/ui/dialog'
-import type { ContextProfile, SectionName } from '@/lib/types'
+import type { ContextProfile, SectionName, Brain } from '@/lib/types'
+
+const PROFILE_ORDER_KEY = 'brain-profile-order'
+
+function getStoredOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(PROFILE_ORDER_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function setStoredOrder(ids: string[]) {
+  localStorage.setItem(PROFILE_ORDER_KEY, JSON.stringify(ids))
+}
+
+function applyOrder(profiles: ContextProfile[], order: string[]): ContextProfile[] {
+  if (!order.length) return profiles
+  const map = new Map(profiles.map((p) => [p.id, p]))
+  const ordered: ContextProfile[] = []
+  for (const id of order) {
+    const p = map.get(id)
+    if (p) {
+      ordered.push(p)
+      map.delete(id)
+    }
+  }
+  // Append any profiles not in the stored order.
+  for (const p of map.values()) {
+    ordered.push(p)
+  }
+  return ordered
+}
+
+function countMatchedEntries(brain: Brain | undefined, profile: ContextProfile): number {
+  if (!brain) return 0
+  let count = 0
+  for (const section of profile.sections) {
+    const entries = brain[section]
+    if (!entries) continue
+    for (const entry of entries) {
+      if (profile.project) {
+        if (entry.project && entry.project.includes(profile.project)) {
+          count++
+        }
+      } else {
+        count++
+      }
+    }
+  }
+  return count
+}
 
 interface ProfileDialogProps {
   profile: ContextProfile
@@ -37,18 +90,18 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
             <DialogTitle>{profile.name}</DialogTitle>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {profile.taskType && (
-                <span className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#62627a]">
+                <span className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#8585a0]">
                   {profile.taskType}
                 </span>
               )}
               {profile.model && (
-                <span className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#62627a]">
+                <span className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#8585a0]">
                   {profile.model}
                 </span>
               )}
             </div>
           </div>
-          <DialogClose className="rounded p-1 text-[#62627a] hover:text-foreground transition-colors">
+          <DialogClose className="rounded p-1 text-[#8585a0] hover:text-foreground transition-colors">
             <X className="h-3.5 w-3.5" />
           </DialogClose>
         </div>
@@ -56,13 +109,13 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
         <div className="mt-4 space-y-3">
           {profile.role && (
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">Role</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">Role</p>
               <p className="text-xs text-foreground/80">{profile.role}</p>
             </div>
           )}
 
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">Sections</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">Sections</p>
             <div className="flex flex-wrap gap-1">
               {profile.sections.map((s) => (
                 <span
@@ -81,12 +134,12 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
 
           {profile.tags.length > 0 && (
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">Tags</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">Tags</p>
               <div className="flex flex-wrap gap-1">
                 {profile.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#62627a]"
+                    className="rounded bg-brain-surface px-1.5 py-0.5 text-[10px] text-[#8585a0]"
                   >
                     {tag}
                   </span>
@@ -97,14 +150,14 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
 
           {profile.project && (
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">Project</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">Project</p>
               <p className="text-xs text-foreground/70">{profile.project}</p>
             </div>
           )}
 
           {profile.systemPrompt && (
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">System prompt</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">System prompt</p>
               <div className="whitespace-pre-wrap rounded bg-brain-surface px-3 py-2 text-xs text-foreground/80 leading-relaxed">
                 {profile.systemPrompt}
               </div>
@@ -113,11 +166,11 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
 
           {profile.constraints && profile.constraints.length > 0 && (
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-[#62627a] mb-1">Constraints</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0] mb-1">Constraints</p>
               <ul className="space-y-1">
                 {profile.constraints.map((c, i) => (
                   <li key={i} className="flex gap-1.5 text-xs text-foreground/80">
-                    <span className="shrink-0 text-[#62627a]">-</span>
+                    <span className="shrink-0 text-[#8585a0]">-</span>
                     <span>{c}</span>
                   </li>
                 ))}
@@ -129,7 +182,7 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
         <div className="mt-4 flex items-center gap-2 border-t border-brain-surface pt-3">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 rounded bg-brain-surface px-2 py-1 text-[10px] text-[#62627a] hover:text-foreground transition-colors"
+            className="flex items-center gap-1 rounded bg-brain-surface px-2 py-1 text-[10px] text-[#8585a0] hover:text-foreground transition-colors"
           >
             <Copy className="h-2.5 w-2.5" />
             {copied ? 'Copied!' : 'Copy curl'}
@@ -147,47 +200,85 @@ function ProfileDialog({ profile, open, onOpenChange, onDelete }: ProfileDialogP
   )
 }
 
-function ProfileRow({ profile, onSelect }: { profile: ContextProfile; onSelect: (p: ContextProfile) => void }) {
+interface ProfileRowProps {
+  profile: ContextProfile
+  matchCount: number
+  onSelect: (p: ContextProfile) => void
+  onToggleSection: (profileId: string, section: SectionName, currentSections: SectionName[]) => void
+  onDragStart: (e: React.DragEvent, id: string) => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: (e: React.DragEvent, id: string) => void
+}
+
+function ProfileRow({ profile, matchCount, onSelect, onToggleSection, onDragStart, onDragOver, onDrop }: ProfileRowProps) {
   return (
-    <button
-      onClick={() => onSelect(profile)}
-      className="flex w-full items-center gap-1.5 rounded-md bg-brain-base px-2 py-1.5 text-left hover:bg-brain-surface/50 transition-colors"
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, profile.id)}
+      onDragOver={onDragOver}
+      onDrop={(e) => onDrop(e, profile.id)}
+      className="flex w-full items-center gap-1 rounded-md bg-brain-base px-1 py-1.5 hover:bg-brain-surface/50 transition-colors group"
     >
-      <span className="flex-1 truncate text-xs text-foreground">{profile.name}</span>
-      <div className="flex shrink-0 items-center gap-1">
-        {profile.taskType && (
-          <span className="rounded bg-brain-surface px-1 py-0.5 text-[10px] text-[#62627a]">
-            {profile.taskType}
+      <GripVertical className="h-3 w-3 shrink-0 text-[#8585a0] opacity-0 group-hover:opacity-50 cursor-grab transition-opacity" />
+      <button
+        onClick={() => onSelect(profile)}
+        className="flex flex-1 min-w-0 items-center gap-1.5 text-left"
+      >
+        <span className="flex-1 truncate text-xs text-foreground">{profile.name}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {profile.taskType && (
+            <span className="rounded bg-brain-surface px-1 py-0.5 text-[10px] text-[#8585a0]">
+              {profile.taskType}
+            </span>
+          )}
+          {profile.model && (
+            <span className="rounded bg-brain-surface px-1 py-0.5 text-[10px] text-[#8585a0]">
+              {profile.model}
+            </span>
+          )}
+          <span className="rounded bg-brain-surface px-1 py-0.5 text-[10px] text-[#8585a0] tabular-nums">
+            {matchCount}
           </span>
-        )}
-        {profile.model && (
-          <span className="rounded bg-brain-surface px-1 py-0.5 text-[10px] text-[#62627a]">
-            {profile.model}
-          </span>
-        )}
-        <div className="flex items-center gap-0.5">
-          {profile.sections.map((s) => (
-            <span
-              key={s}
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: SECTION_COLORS[s] }}
-              title={SECTION_LABELS[s]}
-            />
-          ))}
         </div>
+      </button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {SECTIONS.map((s) => {
+          const active = profile.sections.includes(s)
+          return (
+            <button
+              key={s}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleSection(profile.id, s, profile.sections)
+              }}
+              className={cn(
+                'h-2 w-2 rounded-full transition-opacity border',
+                active ? 'opacity-100' : 'opacity-25',
+              )}
+              style={{
+                backgroundColor: active ? SECTION_COLORS[s] : 'transparent',
+                borderColor: SECTION_COLORS[s],
+              }}
+              title={`${active ? 'Remove' : 'Add'} ${SECTION_LABELS[s]}`}
+            />
+          )
+        })}
       </div>
-    </button>
+    </div>
   )
 }
 
 const DEFAULT_SECTIONS: SectionName[] = ['workingStyle', 'architecture', 'agentRules', 'decisions']
 
 export function ProfilesPanel() {
-  const { data: profiles, createProfile, deleteProfile } = useProfiles()
+  const { data: profiles, createProfile, updateProfile, deleteProfile } = useProfiles()
+  const { data: brain } = useBrain()
   const count = profiles?.length ?? 0
   const [expanded, setExpanded] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState<ContextProfile | null>(null)
+  const [profileOrder, setProfileOrder] = useState<string[]>(getStoredOrder)
+  const dragIdRef = useRef<string | null>(null)
 
   // Create form state
   const [name, setName] = useState('')
@@ -200,11 +291,75 @@ export function ProfilesPanel() {
   const [constraintsText, setConstraintsText] = useState('')
   const [project, setProject] = useState('')
 
+  const orderedProfiles = useMemo(
+    () => applyOrder(profiles ?? [], profileOrder),
+    [profiles, profileOrder],
+  )
+
+  const matchCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of profiles ?? []) {
+      map.set(p.id, countMatchedEntries(brain, p))
+    }
+    return map
+  }, [profiles, brain])
+
   const toggleSection = (s: SectionName) => {
     setSelectedSections((prev) =>
       prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
     )
   }
+
+  const handleToggleProfileSection = useCallback(
+    (profileId: string, section: SectionName, currentSections: SectionName[]) => {
+      const newSections = currentSections.includes(section)
+        ? currentSections.filter((s) => s !== section)
+        : [...currentSections, section]
+      updateProfile.mutate({ id: profileId, sections: newSections })
+    },
+    [updateProfile],
+  )
+
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
+    dragIdRef.current = id
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, targetId: string) => {
+      e.preventDefault()
+      const dragId = dragIdRef.current
+      if (!dragId || dragId === targetId) return
+      const currentIds = orderedProfiles.map((p) => p.id)
+      const fromIndex = currentIds.indexOf(dragId)
+      const toIndex = currentIds.indexOf(targetId)
+      if (fromIndex === -1 || toIndex === -1) return
+      const reordered = [...currentIds]
+      reordered.splice(fromIndex, 1)
+      reordered.splice(toIndex, 0, dragId)
+      setProfileOrder(reordered)
+      setStoredOrder(reordered)
+      dragIdRef.current = null
+    },
+    [orderedProfiles],
+  )
+
+  // Sync stored order when profiles change (remove stale ids).
+  useEffect(() => {
+    if (!profiles?.length) return
+    const ids = new Set(profiles.map((p) => p.id))
+    const stored = getStoredOrder()
+    const cleaned = stored.filter((id) => ids.has(id))
+    if (cleaned.length !== stored.length) {
+      setStoredOrder(cleaned)
+      setProfileOrder(cleaned)
+    }
+  }, [profiles])
 
   const handleCreate = async () => {
     if (!name.trim()) return
@@ -249,17 +404,17 @@ export function ProfilesPanel() {
             className="flex flex-1 items-center gap-1.5 py-1 hover:text-foreground transition-colors"
           >
             {expanded
-              ? <ChevronDown className="h-3 w-3 text-[#62627a]" />
-              : <ChevronRight className="h-3 w-3 text-[#62627a]" />
+              ? <ChevronDown className="h-3 w-3 text-[#8585a0]" />
+              : <ChevronRight className="h-3 w-3 text-[#8585a0]" />
             }
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[#62627a]">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[#8585a0]">
               Profiles
             </span>
-            <span className="text-[10px] text-[#62627a]">({count})</span>
+            <span className="text-[10px] text-[#8585a0]">({count})</span>
           </button>
           <button
             onClick={() => { setShowCreate((s) => !s); setExpanded(true) }}
-            className="rounded p-0.5 text-[#62627a] hover:text-foreground transition-colors"
+            className="rounded p-0.5 text-[#8585a0] hover:text-foreground transition-colors"
             aria-label="New profile"
           >
             <Plus className="h-3 w-3" />
@@ -275,14 +430,14 @@ export function ProfilesPanel() {
                   placeholder="Profile name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <input
                   type="text"
                   placeholder="Task type (e.g. pr-review)"
                   value={taskType}
                   onChange={(e) => setTaskType(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {SECTIONS.map((s) => (
@@ -293,7 +448,7 @@ export function ProfilesPanel() {
                         onChange={() => toggleSection(s)}
                         className="h-3 w-3 accent-brain-surface"
                       />
-                      <span className="text-[10px] text-[#62627a]">{SECTION_LABELS[s]}</span>
+                      <span className="text-[10px] text-[#8585a0]">{SECTION_LABELS[s]}</span>
                     </label>
                   ))}
                 </div>
@@ -302,7 +457,7 @@ export function ProfilesPanel() {
                   placeholder="Tags (comma-separated)"
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <select
                   value={model}
@@ -319,28 +474,28 @@ export function ProfilesPanel() {
                   placeholder="Role (e.g. implements features, one task at a time)"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <textarea
                   placeholder="System prompt (role-specific instructions)"
                   value={systemPrompt}
                   onChange={(e) => setSystemPrompt(e.target.value)}
                   rows={3}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none resize-y"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none resize-y"
                 />
                 <input
                   type="text"
                   placeholder="Constraints (comma-separated)"
                   value={constraintsText}
                   onChange={(e) => setConstraintsText(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <input
                   type="text"
                   placeholder="Project (optional)"
                   value={project}
                   onChange={(e) => setProject(e.target.value)}
-                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#62627a] focus:outline-none"
+                  className="w-full bg-brain-surface border border-white/10 rounded px-2 py-1 text-xs text-foreground placeholder:text-[#8585a0] focus:outline-none"
                 />
                 <div className="flex gap-2">
                   <button
@@ -355,7 +510,7 @@ export function ProfilesPanel() {
                   </button>
                   <button
                     onClick={() => setShowCreate(false)}
-                    className="rounded px-2 py-1 text-[10px] text-[#62627a] hover:text-foreground transition-colors"
+                    className="rounded px-2 py-1 text-[10px] text-[#8585a0] hover:text-foreground transition-colors"
                   >
                     Cancel
                   </button>
@@ -363,12 +518,21 @@ export function ProfilesPanel() {
               </div>
             )}
 
-            {(profiles ?? []).map((profile) => (
-              <ProfileRow key={profile.id} profile={profile} onSelect={setSelectedProfile} />
+            {orderedProfiles.map((profile) => (
+              <ProfileRow
+                key={profile.id}
+                profile={profile}
+                matchCount={matchCounts.get(profile.id) ?? 0}
+                onSelect={setSelectedProfile}
+                onToggleSection={handleToggleProfileSection}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+              />
             ))}
 
             {!showCreate && count === 0 && (
-              <p className="py-2 text-center text-[10px] text-[#62627a]">No profiles yet.</p>
+              <p className="py-2 text-center text-[10px] text-[#8585a0]">No profiles yet.</p>
             )}
           </div>
         )}

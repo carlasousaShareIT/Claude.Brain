@@ -3,10 +3,10 @@ import { ShieldAlert, ShieldCheck, Loader2, Info } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { useHealth } from '@/hooks/use-health'
+import { useHealth, useAutoHealth } from '@/hooks/use-health'
 import { useArchived } from '@/hooks/use-archived'
 import { cn, truncate } from '@/lib/utils'
-import type { HealthEntry } from '@/lib/types'
+import type { HealthEntry, HealthReport } from '@/lib/types'
 import type { SectionName } from '@/lib/types'
 
 const SECTION_COLORS: Record<string, string> = {
@@ -57,7 +57,29 @@ function StaleEntryRow({ entry, onArchive }: { entry: HealthEntry; onArchive: ()
   )
 }
 
-export function HealthCard() {
+function AutoHealthBanner({ data, isLoading }: { data: HealthReport | undefined; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-brain-base p-2.5">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-brain-accent" />
+        <p className="text-xs text-muted-foreground">Running auto health check...</p>
+      </div>
+    )
+  }
+
+  if (!data || data.staleEntries.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-2 rounded-md bg-brain-amber/10 p-2.5">
+      <ShieldAlert className="h-4 w-4 shrink-0 text-brain-amber" />
+      <p className="text-xs text-brain-amber">
+        {data.staleEntries.length} stale {data.staleEntries.length === 1 ? 'entry has' : 'entries have'} broken file references.
+      </p>
+    </div>
+  )
+}
+
+export function HealthCard({ autoHealth }: { autoHealth?: { data: HealthReport | undefined; isLoading: boolean } }) {
   const [repoPath, setRepoPath] = useState('')
   const { mutate: runCheck, data, isPending, error } = useHealth()
   const { archive } = useArchived()
@@ -68,6 +90,8 @@ export function HealthCard() {
 
   return (
     <div className="space-y-3">
+      {autoHealth && <AutoHealthBanner data={autoHealth.data} isLoading={autoHealth.isLoading} />}
+
       <div className="flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger

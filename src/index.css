@@ -121,6 +121,11 @@
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
+/* Responsive entry text */
+@media (max-width: 1280px) {
+    .brain-entry-text { font-size: 12px; }
+}
+
 /* Graph tooltip animation */
 @keyframes task-pulse {
     0%, 100% { opacity: 0.6; }

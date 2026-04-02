@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { X } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
@@ -9,11 +10,16 @@ export function SessionsView() {
   const { data: sessions, isLoading } = useSessions()
   const sessionFilterId = useUIStore((s) => s.sessionFilterId)
   const setSessionFilterId = useUIStore((s) => s.setSessionFilterId)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const activeSession = sessions?.find((s) => s.id === sessionFilterId)
 
-  const handleSelect = (id: string) => {
+  const handleFilter = (id: string) => {
     setSessionFilterId(id === sessionFilterId ? '' : id)
+  }
+
+  const handleToggleExpand = (id: string) => {
+    setExpandedId(id === expandedId ? null : id)
   }
 
   if (isLoading) {
@@ -53,14 +59,16 @@ export function SessionsView() {
         </div>
       )}
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
         <div className="space-y-2 p-4">
           {sessions.map((session) => (
             <SessionCard
               key={session.id}
               session={session}
-              onSelect={handleSelect}
-              isSelected={session.id === sessionFilterId}
+              onFilter={handleFilter}
+              isFiltered={session.id === sessionFilterId}
+              isExpanded={session.id === expandedId}
+              onToggleExpand={handleToggleExpand}
             />
           ))}
         </div>
