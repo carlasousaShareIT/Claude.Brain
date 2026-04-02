@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, getSessionById, listSessions, getLatestHandoff } from "../db-store.js";
+import { startSession, endSession, getSessionById, listSessions, getLatestHandoff, searchSessions } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 
 const router = Router();
@@ -32,6 +32,14 @@ router.get("/", (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const project = req.query.project || undefined;
   res.json(listSessions({ limit, project }));
+});
+
+// GET /search — search across session handoffs, labels, and projects
+router.get("/search", (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.status(400).json({ error: "Missing q parameter" });
+  const project = req.query.project || undefined;
+  res.json(searchSessions(q, project));
 });
 
 // GET /latest/handoff — most recent handoff for continuity

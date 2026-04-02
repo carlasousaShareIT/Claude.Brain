@@ -264,6 +264,25 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated: added sessions table");
   }
 
+  // Schema migration: add mission_templates table (v1.2.0)
+  const templateTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='mission_templates'").get();
+  if (!templateTableExists) {
+    db.exec(`
+      CREATE TABLE mission_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        project TEXT,
+        tasks TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_mission_templates_project ON mission_templates(project);
+    `);
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.2.0");
+    console.log("[brain-db] migrated: added mission_templates table");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

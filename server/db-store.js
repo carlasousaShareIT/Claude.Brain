@@ -2104,3 +2104,89 @@ export const getLatestHandoff = (project) => {
   if (!row) return null;
   return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
 };
+
+export const searchSessions = (query, project) => {
+  const db = getDb();
+  const q = `%${query}%`;
+  let sql = "SELECT * FROM sessions WHERE (label LIKE ? OR handoff LIKE ? OR project LIKE ?)";
+  const params = [q, q, q];
+  if (project) { sql += " AND project = ?"; params.push(project); }
+  sql += " ORDER BY started_at DESC LIMIT 20";
+  return db.prepare(sql).all(...params).map(row => ({
+    ...row,
+    handoff: row.handoff ? JSON.parse(row.handoff) : null,
+  }));
+};
+
+// ---------------------------------------------------------------------------
+// Mission templates (reusable blueprints)
+// ---------------------------------------------------------------------------
+
+export const createTemplate = ({ name, description, project, tasks }) => {
+  const db = getDb();
+  const existingIds = new Set(db.prepare("SELECT id FROM mission_templates").all().map(r => r.id));
+  const id = slugify(name, "tmpl", existingIds);
+  const ts = now();
+  db.prepare(`
+    INSERT INTO mission_templates (id, name, description, project, tasks, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, description || "", project || null, JSON.stringify(tasks || []), ts, ts);
+  return { id, name, description: description || "", project: project || null, tasks: tasks || [], createdAt: ts, updatedAt: ts };
+};
+
+export const getTemplates = (project) => {
+  const db = getDb();
+  let sql = "SELECT * FROM mission_templates";
+  const params = [];
+  if (project) { sql += " WHERE project = ? OR project IS NULL"; params.push(project); }
+  sql += " ORDER BY name ASC";
+  return db.prepare(sql).all(...params).map(row => ({
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    project: row.project,
+    tasks: JSON.parse(row.tasks || "[]"),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+};
+
+export const getTemplate = (id) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM mission_templates WHERE id = ?").get(id);
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    project: row.project,
+    tasks: JSON.parse(row.tasks || "[]"),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+export const updateTemplate = (id, updates) => {
+  const db = getDb();
+  const existing = db.prepare("SELECT * FROM mission_templates WHERE id = ?").get(id);
+  if (!existing) return null;
+  const sets = [];
+  const params = [];
+  if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
+  if (updates.description !== undefined) { sets.push("description = ?"); params.push(updates.description); }
+  if (updates.project !== undefined) { sets.push("project = ?"); params.push(updates.project); }
+  if (updates.tasks !== undefined) { sets.push("tasks = ?"); params.push(JSON.stringify(updates.tasks)); }
+  if (sets.length === 0) return getTemplate(id);
+  sets.push("updated_at = datetime('now')");
+  params.push(id);
+  db.prepare(`UPDATE mission_templates SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+  return getTemplate(id);
+};
+
+export const deleteTemplate = (id) => {
+  const db = getDb();
+  const existing = db.prepare("SELECT id FROM mission_templates WHERE id = ?").get(id);
+  if (!existing) return false;
+  db.prepare("DELETE FROM mission_templates WHERE id = ?").run(id);
+  return true;
+};
