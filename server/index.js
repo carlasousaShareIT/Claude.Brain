@@ -24,6 +24,8 @@ import missionsRouter from "./routes/missions.js";
 import remindersRouter from "./routes/reminders.js";
 import experimentsRouter from "./routes/experiments.js";
 import sessionsRouter from "./routes/sessions.js";
+import locksRouter from "./routes/locks.js";
+import agentsRouter from "./routes/agents.js";
 import sseRouter from "./routes/sse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,6 +84,8 @@ app.use("/missions", missionsRouter);
 app.use("/reminders", remindersRouter);
 app.use("/experiments", experimentsRouter);
 app.use("/sessions", sessionsRouter);
+app.use("/locks", locksRouter);
+app.use("/agents", agentsRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {

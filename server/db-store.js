@@ -65,9 +65,32 @@ const rowToTask = (row) => ({
   sessionId: row.session_id || null,
   output: row.output || null,
   blockers: parseJson(row.blockers, []),
+  blockedBy: parseJson(row.blocked_by, []),
   createdAt: row.created_at || null,
   startedAt: row.started_at || null,
   completedAt: row.completed_at || null,
+});
+
+const rowToLock = (row) => ({
+  id: row.id,
+  file: row.file,
+  agent: row.agent,
+  sessionId: row.session_id || null,
+  claimedAt: row.claimed_at || null,
+  expiresAt: row.expires_at || null,
+});
+
+const rowToAgentResult = (row) => ({
+  id: row.id,
+  agent: row.agent,
+  sessionId: row.session_id || null,
+  missionId: row.mission_id || null,
+  taskId: row.task_id || null,
+  branch: row.branch || null,
+  worktreePath: row.worktree_path || null,
+  changedFiles: parseJson(row.changed_files, []),
+  summary: row.summary,
+  createdAt: row.created_at || null,
 });
 
 const rowToReminder = (row) => ({
@@ -436,8 +459,8 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
   `);
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, created_at)
-    VALUES (?, ?, ?, 'pending', '[]', ?)
+    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, blocked_by, created_at)
+    VALUES (?, ?, ?, 'pending', '[]', ?, ?)
   `);
 
   const missionTasks = [];
@@ -446,7 +469,8 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
     for (const t of (tasks || [])) {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
-      insertTask.run(taskId, missionId, t.description, ts);
+      const blockedBy = jsonStr(t.blockedBy || []);
+      insertTask.run(taskId, missionId, t.description, blockedBy, ts);
       missionTasks.push({
         id: taskId,
         description: t.description,
@@ -455,6 +479,7 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
         sessionId: null,
         output: null,
         blockers: [],
+        blockedBy: t.blockedBy || [],
         createdAt: ts,
         startedAt: null,
         completedAt: null,
@@ -549,8 +574,8 @@ export const addTasksToMission = (missionId, tasks) => {
   const existingTaskIds = new Set(db.prepare("SELECT id FROM mission_tasks").all().map(r => r.id));
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, created_at)
-    VALUES (?, ?, ?, 'pending', '[]', ?)
+    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, blocked_by, created_at)
+    VALUES (?, ?, ?, 'pending', '[]', ?, ?)
   `);
 
   const newTasks = [];
@@ -558,7 +583,8 @@ export const addTasksToMission = (missionId, tasks) => {
     for (const t of tasks) {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
-      insertTask.run(taskId, missionId, t.description, ts);
+      const blockedBy = jsonStr(t.blockedBy || []);
+      insertTask.run(taskId, missionId, t.description, blockedBy, ts);
       newTasks.push({
         id: taskId,
         description: t.description,
@@ -567,6 +593,7 @@ export const addTasksToMission = (missionId, tasks) => {
         sessionId: null,
         output: null,
         blockers: [],
+        blockedBy: t.blockedBy || [],
         createdAt: ts,
         startedAt: null,
         completedAt: null,
@@ -586,19 +613,20 @@ export const addTasksToMission = (missionId, tasks) => {
 export const updateTask = (missionId, taskId, updates) => {
   const db = getDb();
   const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
-  if (!mission) return { task: null, missionAutoCompleted: false };
+  if (!mission) return { task: null, missionAutoCompleted: false, unblockedTasks: [] };
 
   const taskRow = db.prepare("SELECT * FROM mission_tasks WHERE id = ? AND mission_id = ?").get(taskId, missionId);
-  if (!taskRow) return { task: null, missionAutoCompleted: false };
+  if (!taskRow) return { task: null, missionAutoCompleted: false, unblockedTasks: [] };
 
   const ts = now();
-  const { status, assignedAgent, sessionId, output, blockers, description } = updates;
+  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description } = updates;
 
   let newDescription = description !== undefined ? description : taskRow.description;
   let newAgent = assignedAgent !== undefined ? assignedAgent : taskRow.assigned_agent;
   let newSessionId = sessionId !== undefined ? sessionId : taskRow.session_id;
   let newOutput = output !== undefined ? output : taskRow.output;
   let newBlockers = blockers !== undefined ? jsonStr(blockers) : taskRow.blockers;
+  let newBlockedBy = blockedBy !== undefined ? jsonStr(blockedBy) : taskRow.blocked_by;
   let newStatus = status !== undefined ? status : taskRow.status;
   let startedAt = taskRow.started_at;
   let completedAt = taskRow.completed_at;
@@ -610,21 +638,38 @@ export const updateTask = (missionId, taskId, updates) => {
 
   db.prepare(`
     UPDATE mission_tasks SET description = ?, status = ?, assigned_agent = ?,
-      session_id = ?, output = ?, blockers = ?, started_at = ?, completed_at = ?
+      session_id = ?, output = ?, blockers = ?, blocked_by = ?, started_at = ?, completed_at = ?
     WHERE id = ? AND mission_id = ?
-  `).run(newDescription, newStatus, newAgent, newSessionId, newOutput, newBlockers, startedAt, completedAt, taskId, missionId);
+  `).run(newDescription, newStatus, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, startedAt, completedAt, taskId, missionId);
+
+  // Auto-unblock dependents when a task completes
+  const unblockedTasks = [];
+  if (status === "completed") {
+    const allTasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ?").all(missionId);
+    const completedIds = new Set(allTasks.filter(t => t.status === "completed" || t.id === taskId).map(t => t.id));
+
+    for (const t of allTasks) {
+      if (t.status !== "blocked") continue;
+      const deps = parseJson(t.blocked_by, []);
+      if (deps.length === 0) continue;
+      if (deps.every(depId => completedIds.has(depId))) {
+        db.prepare("UPDATE mission_tasks SET status = 'pending' WHERE id = ?").run(t.id);
+        unblockedTasks.push(rowToTask({ ...t, status: "pending" }));
+      }
+    }
+  }
 
   // Check auto-complete
   let missionAutoCompleted = false;
-  const allTasks = db.prepare("SELECT status FROM mission_tasks WHERE mission_id = ?").all(missionId);
-  const allCompleted = allTasks.length > 0 && allTasks.every(t => t.status === "completed");
+  const allTaskStatuses = db.prepare("SELECT status FROM mission_tasks WHERE mission_id = ?").all(missionId);
+  const allCompleted = allTaskStatuses.length > 0 && allTaskStatuses.every(t => t.status === "completed");
   if (allCompleted && mission.status === "active") {
     db.prepare("UPDATE missions SET status = 'completed', completed_at = ? WHERE id = ?").run(ts, missionId);
     missionAutoCompleted = true;
   }
 
   const updatedTask = rowToTask(db.prepare("SELECT * FROM mission_tasks WHERE id = ?").get(taskId));
-  return { task: updatedTask, missionAutoCompleted };
+  return { task: updatedTask, missionAutoCompleted, unblockedTasks };
 };
 
 export const getResumableMissions = (projectFilter) => {
@@ -2189,4 +2234,138 @@ export const deleteTemplate = (id) => {
   if (!existing) return false;
   db.prepare("DELETE FROM mission_templates WHERE id = ?").run(id);
   return true;
+};
+
+// ---------------------------------------------------------------------------
+// Task dependency graph
+// ---------------------------------------------------------------------------
+
+export const getNextTasks = (missionId) => {
+  const db = getDb();
+  const allTasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ? ORDER BY created_at").all(missionId);
+  const completedIds = new Set(allTasks.filter(t => t.status === "completed").map(t => t.id));
+
+  return allTasks
+    .filter(t => {
+      if (t.status !== "pending") return false;
+      const deps = parseJson(t.blocked_by, []);
+      return deps.length === 0 || deps.every(depId => completedIds.has(depId));
+    })
+    .map(rowToTask);
+};
+
+// ---------------------------------------------------------------------------
+// File locks
+// ---------------------------------------------------------------------------
+
+const LOCK_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+const cleanExpiredLocks = () => {
+  const db = getDb();
+  const expired = db.prepare("DELETE FROM locks WHERE expires_at < ?").run(now());
+  return expired.changes;
+};
+
+export const claimLocks = (files, agent, sessionId) => {
+  const db = getDb();
+  cleanExpiredLocks();
+
+  const conflicts = [];
+  for (const file of files) {
+    const existing = db.prepare("SELECT * FROM locks WHERE file = ? AND agent != ? AND expires_at >= ?").get(file, agent, now());
+    if (existing) conflicts.push(rowToLock(existing));
+  }
+  if (conflicts.length > 0) return { ok: false, conflicts };
+
+  const ts = now();
+  const expiresAt = new Date(Date.now() + LOCK_TTL_MS).toISOString();
+  const locks = [];
+
+  const doTx = db.transaction(() => {
+    for (const file of files) {
+      // Same agent re-claiming: refresh expiry
+      const existing = db.prepare("SELECT * FROM locks WHERE file = ? AND agent = ?").get(file, agent);
+      if (existing) {
+        db.prepare("UPDATE locks SET expires_at = ?, session_id = ?, claimed_at = ? WHERE id = ?").run(expiresAt, sessionId || existing.session_id, ts, existing.id);
+        locks.push({ id: existing.id, file, agent, sessionId: sessionId || existing.session_id, claimedAt: ts, expiresAt });
+      } else {
+        const result = db.prepare("INSERT INTO locks (file, agent, session_id, claimed_at, expires_at) VALUES (?, ?, ?, ?, ?)").run(file, agent, sessionId || null, ts, expiresAt);
+        locks.push({ id: result.lastInsertRowid, file, agent, sessionId: sessionId || null, claimedAt: ts, expiresAt });
+      }
+    }
+  });
+  doTx();
+
+  return { ok: true, locks };
+};
+
+export const releaseLocks = ({ files, agent }) => {
+  const db = getDb();
+  let sql = "DELETE FROM locks WHERE 1=1";
+  const params = [];
+  if (files && files.length > 0) {
+    sql += ` AND file IN (${files.map(() => "?").join(", ")})`;
+    params.push(...files);
+  }
+  if (agent) { sql += " AND agent = ?"; params.push(agent); }
+  const result = db.prepare(sql).run(...params);
+  return { released: result.changes };
+};
+
+export const getLocks = ({ agent, file } = {}) => {
+  const db = getDb();
+  cleanExpiredLocks();
+  let sql = "SELECT * FROM locks WHERE 1=1";
+  const params = [];
+  if (agent) { sql += " AND agent = ?"; params.push(agent); }
+  if (file) { sql += " AND file = ?"; params.push(file); }
+  sql += " ORDER BY claimed_at DESC";
+  return db.prepare(sql).all(...params).map(rowToLock);
+};
+
+export const forceReleaseLock = (id) => {
+  const db = getDb();
+  const result = db.prepare("DELETE FROM locks WHERE id = ?").run(id);
+  return result.changes > 0;
+};
+
+// ---------------------------------------------------------------------------
+// Agent output registry
+// ---------------------------------------------------------------------------
+
+export const createAgentResult = ({ agent, sessionId, missionId, taskId, branch, worktreePath, changedFiles, summary }) => {
+  const db = getDb();
+  const ts = now();
+  const existingIds = new Set(db.prepare("SELECT id FROM agent_results").all().map(r => r.id));
+  const id = slugify(agent + " " + summary, "ar", existingIds);
+
+  db.prepare(`
+    INSERT INTO agent_results (id, agent, session_id, mission_id, task_id, branch, worktree_path, changed_files, summary, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, agent, sessionId || null, missionId || null, taskId || null, branch || null, worktreePath || null, jsonStr(changedFiles || []), summary, ts);
+
+  return { id, agent, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, branch: branch || null, worktreePath: worktreePath || null, changedFiles: changedFiles || [], summary, createdAt: ts };
+};
+
+export const getAgentResults = ({ sessionId, agent, missionId } = {}) => {
+  const db = getDb();
+  let sql = "SELECT * FROM agent_results WHERE 1=1";
+  const params = [];
+  if (sessionId) { sql += " AND session_id = ?"; params.push(sessionId); }
+  if (agent) { sql += " AND agent = ?"; params.push(agent); }
+  if (missionId) { sql += " AND mission_id = ?"; params.push(missionId); }
+  sql += " ORDER BY created_at DESC";
+  return db.prepare(sql).all(...params).map(rowToAgentResult);
+};
+
+export const getAgentResult = (id) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM agent_results WHERE id = ?").get(id);
+  return row ? rowToAgentResult(row) : null;
+};
+
+export const deleteAgentResult = (id) => {
+  const db = getDb();
+  const result = db.prepare("DELETE FROM agent_results WHERE id = ?").run(id);
+  return result.changes > 0;
 };

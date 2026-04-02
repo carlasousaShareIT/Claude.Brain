@@ -11,6 +11,7 @@ import {
   updateTask,
   getResumableMissions,
   getAgentStats,
+  getNextTasks,
   getWebhooks,
   getTemplate,
   getTemplates,
@@ -107,6 +108,14 @@ router.get("/agents", (req, res) => {
   res.json(result);
 });
 
+// GET /missions/:id/next — tasks ready to work on (no unresolved dependencies)
+router.get("/:id/next", (req, res) => {
+  const mission = getMission(req.params.id);
+  if (!mission) return res.status(404).json({ error: "Mission not found" });
+  const next = getNextTasks(req.params.id);
+  res.json(next);
+});
+
 // GET /missions — list missions
 router.get("/", (req, res) => {
   const statusFilter = req.query.status || "";
@@ -173,14 +182,14 @@ router.post("/:id/tasks", (req, res) => {
 
 // PATCH /missions/:id/tasks/:taskId — update a task
 router.patch("/:id/tasks/:taskId", (req, res) => {
-  const { status, assignedAgent, sessionId, output, blockers, description } = req.body;
+  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description } = req.body;
 
   if (status !== undefined && !VALID_TASK_STATUSES.has(status)) {
     return res.status(400).json({ error: `Invalid status "${status}". Must be one of: ${[...VALID_TASK_STATUSES].join(", ")}` });
   }
 
-  const { task, missionAutoCompleted } = updateTask(req.params.id, req.params.taskId, {
-    status, assignedAgent, sessionId, output, blockers, description,
+  const { task, missionAutoCompleted, unblockedTasks } = updateTask(req.params.id, req.params.taskId, {
+    status, assignedAgent, sessionId, output, blockers, blockedBy, description,
   });
 
   if (!task) {
@@ -199,10 +208,16 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
     console.log(`[brain] mission auto-completed: ${mission.id}`);
   }
 
+  // Broadcast events for auto-unblocked tasks
+  for (const unblocked of unblockedTasks) {
+    broadcastEvent("task-updated", { missionId: req.params.id, task: unblocked, ts: now });
+    console.log(`[brain] task auto-unblocked: ${unblocked.id} in ${req.params.id}`);
+  }
+
   broadcastEvent("task-updated", { missionId: req.params.id, task, ts: now });
   fireWebhooks({ webhooks: getWebhooks() }, "task-updated", "missions", `${task.description} → ${task.status}`);
   console.log(`[brain] task updated: ${task.id} in ${req.params.id} — status=${task.status}`);
-  res.json(task);
+  res.json({ ...task, unblockedTasks });
 });
 
 export default router;

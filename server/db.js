@@ -283,6 +283,60 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated: added mission_templates table");
   }
 
+  // Schema migration: add locks table (v1.3.0)
+  const locksTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='locks'").get();
+  if (!locksTableExists) {
+    db.exec(`
+      CREATE TABLE locks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        session_id TEXT,
+        claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_locks_file ON locks(file);
+      CREATE INDEX idx_locks_agent ON locks(agent);
+      CREATE INDEX idx_locks_expires ON locks(expires_at);
+    `);
+    console.log("[brain-db] migrated: added locks table");
+  }
+
+  // Schema migration: add agent_results table (v1.3.0)
+  const agentResultsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_results'").get();
+  if (!agentResultsTableExists) {
+    db.exec(`
+      CREATE TABLE agent_results (
+        id TEXT PRIMARY KEY,
+        agent TEXT NOT NULL,
+        session_id TEXT,
+        mission_id TEXT,
+        task_id TEXT,
+        branch TEXT,
+        worktree_path TEXT,
+        changed_files TEXT DEFAULT '[]',
+        summary TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_agent_results_agent ON agent_results(agent);
+      CREATE INDEX idx_agent_results_session ON agent_results(session_id);
+      CREATE INDEX idx_agent_results_mission ON agent_results(mission_id);
+    `);
+    console.log("[brain-db] migrated: added agent_results table");
+  }
+
+  // Schema migration: add blocked_by column to mission_tasks (v1.3.0)
+  const taskCols = db.prepare("PRAGMA table_info(mission_tasks)").all().map(c => c.name);
+  if (!taskCols.includes("blocked_by")) {
+    db.exec("ALTER TABLE mission_tasks ADD COLUMN blocked_by TEXT DEFAULT '[]'");
+    console.log("[brain-db] migrated mission_tasks: added blocked_by column");
+  }
+
+  // Update schema version to 1.3.0 if any v1.3.0 migrations ran
+  if (!locksTableExists || !agentResultsTableExists || !taskCols.includes("blocked_by")) {
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.3.0");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {
