@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '@/stores/ui-store';
+import { useActivityStore } from '@/stores/activity-store';
 
 export function useSSE() {
   const queryClient = useQueryClient();
@@ -50,6 +51,35 @@ export function useSSE() {
       };
       for (const name of ['mission-created', 'mission-updated', 'task-updated']) {
         es.addEventListener(name, onMissionEvent);
+      }
+
+      // Push task-updated events into the activity feed
+      es.addEventListener('task-updated', (e: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          if (parsed.task) {
+            useActivityStore.getState().addEvent({
+              id: `${parsed.missionId}-${parsed.task.id}-${Date.now()}`,
+              missionId: parsed.missionId,
+              missionName: parsed.missionName || parsed.missionId,
+              taskId: parsed.task.id,
+              taskDescription: parsed.task.description,
+              agent: parsed.task.assignedAgent || null,
+              status: parsed.task.status || 'unknown',
+              timestamp: parsed.ts,
+            });
+          }
+        } catch {
+          // Ignore malformed events.
+        }
+      });
+
+      // Session events
+      const onSessionEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      };
+      for (const name of ['session:start', 'session:end']) {
+        es.addEventListener(name, onSessionEvent);
       }
 
       // Profile events

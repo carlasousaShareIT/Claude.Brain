@@ -40,6 +40,7 @@ export interface ArchivedEntry extends BrainEntry {
 
 export interface Task {
   id: string;
+  title: string | null;
   description: string;
   status: 'pending' | 'in_progress' | 'completed' | 'blocked';
   assignedAgent: string | null;
@@ -298,6 +299,22 @@ export interface AuditSummary {
   promotable: number
   agingDecisions: number
   total: number
+}
+
+export interface SessionHandoff {
+  done: string[]
+  remaining: string[]
+  blocked: string[]
+  decisions: string[]
+}
+
+export interface SessionLifecycle {
+  id: string
+  label: string | null
+  project: string | null
+  started_at: string
+  ended_at: string | null
+  handoff: SessionHandoff | null
 }
 
 export interface AuditReport {

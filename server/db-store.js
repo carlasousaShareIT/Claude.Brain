@@ -59,6 +59,7 @@ const rowToMission = (row) => ({
 
 const rowToTask = (row) => ({
   id: row.id,
+  title: row.title || null,
   description: row.description,
   status: row.status || "pending",
   assignedAgent: row.assigned_agent || null,
@@ -459,8 +460,8 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
   `);
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, blocked_by, created_at)
-    VALUES (?, ?, ?, 'pending', '[]', ?, ?)
+    INSERT INTO mission_tasks (id, mission_id, title, description, status, blockers, blocked_by, created_at)
+    VALUES (?, ?, ?, ?, 'pending', '[]', ?, ?)
   `);
 
   const missionTasks = [];
@@ -470,9 +471,10 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
       const blockedBy = jsonStr(t.blockedBy || []);
-      insertTask.run(taskId, missionId, t.description, blockedBy, ts);
+      insertTask.run(taskId, missionId, t.title || null, t.description, blockedBy, ts);
       missionTasks.push({
         id: taskId,
+        title: t.title || null,
         description: t.description,
         status: "pending",
         assignedAgent: null,
@@ -574,8 +576,8 @@ export const addTasksToMission = (missionId, tasks) => {
   const existingTaskIds = new Set(db.prepare("SELECT id FROM mission_tasks").all().map(r => r.id));
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, description, status, blockers, blocked_by, created_at)
-    VALUES (?, ?, ?, 'pending', '[]', ?, ?)
+    INSERT INTO mission_tasks (id, mission_id, title, description, status, blockers, blocked_by, created_at)
+    VALUES (?, ?, ?, ?, 'pending', '[]', ?, ?)
   `);
 
   const newTasks = [];
@@ -584,9 +586,10 @@ export const addTasksToMission = (missionId, tasks) => {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
       const blockedBy = jsonStr(t.blockedBy || []);
-      insertTask.run(taskId, missionId, t.description, blockedBy, ts);
+      insertTask.run(taskId, missionId, t.title || null, t.description, blockedBy, ts);
       newTasks.push({
         id: taskId,
+        title: t.title || null,
         description: t.description,
         status: "pending",
         assignedAgent: null,
@@ -619,8 +622,9 @@ export const updateTask = (missionId, taskId, updates) => {
   if (!taskRow) return { task: null, missionAutoCompleted: false, unblockedTasks: [] };
 
   const ts = now();
-  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description } = updates;
+  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description, title } = updates;
 
+  let newTitle = title !== undefined ? title : (taskRow.title || null);
   let newDescription = description !== undefined ? description : taskRow.description;
   let newAgent = assignedAgent !== undefined ? assignedAgent : taskRow.assigned_agent;
   let newSessionId = sessionId !== undefined ? sessionId : taskRow.session_id;
@@ -637,10 +641,10 @@ export const updateTask = (missionId, taskId, updates) => {
   }
 
   db.prepare(`
-    UPDATE mission_tasks SET description = ?, status = ?, assigned_agent = ?,
+    UPDATE mission_tasks SET title = ?, description = ?, status = ?, assigned_agent = ?,
       session_id = ?, output = ?, blockers = ?, blocked_by = ?, started_at = ?, completed_at = ?
     WHERE id = ? AND mission_id = ?
-  `).run(newDescription, newStatus, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, startedAt, completedAt, taskId, missionId);
+  `).run(newTitle, newDescription, newStatus, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, startedAt, completedAt, taskId, missionId);
 
   // Auto-unblock dependents when a task completes
   const unblockedTasks = [];

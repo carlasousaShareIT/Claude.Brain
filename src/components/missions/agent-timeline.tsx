@@ -31,11 +31,6 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
 interface AgentGroup {
   agent: string
   tasks: Array<Task & { _duration: number }>

@@ -74,7 +74,14 @@ export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRow
 
         {/* Task info */}
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-foreground leading-relaxed">{task.description}</p>
+          <p className="text-xs font-medium text-foreground leading-snug">
+            {task.title || task.description}
+          </p>
+          {task.title && (
+            <p className="mt-0.5 text-[11px] text-foreground/60 leading-snug line-clamp-2">
+              {task.description}
+            </p>
+          )}
           <button
             onClick={handleCopyId}
             className="mt-0.5 cursor-pointer"

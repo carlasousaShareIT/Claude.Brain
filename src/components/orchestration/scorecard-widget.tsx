@@ -68,6 +68,9 @@ export function ScorecardWidget({ sessionId }: { sessionId: string }) {
           <p className="text-xs font-medium text-foreground">
             {scoreData.score}/{scoreData.maxScore} points
           </p>
+          <p className="text-[10px] text-[#62627a]">
+            {checks.filter(([, info]) => info.passed).length}/{checks.length} checks passed
+          </p>
           {scoreData.label && (
             <p className="text-[10px] text-[#62627a]">{scoreData.label}</p>
           )}
@@ -83,12 +86,20 @@ export function ScorecardWidget({ sessionId }: { sessionId: string }) {
             ) : (
               <XCircle className="h-3 w-3 shrink-0 text-brain-red" />
             )}
-            <span className="min-w-0 flex-1 truncate text-[10px] text-foreground/80">
+            <span className="shrink-0 text-[10px] text-foreground/80">
               {CHECK_LABELS[check] ?? check}
             </span>
-            <span className="shrink-0 text-[10px] text-[#62627a]">
-              {info.earned}/{info.weight}
-            </span>
+            {info.detail && (
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-right text-[9px]',
+                  info.passed ? 'text-[#62627a]' : 'text-brain-red/60',
+                )}
+                title={info.detail}
+              >
+                {info.detail}
+              </span>
+            )}
           </div>
         ))}
       </div>

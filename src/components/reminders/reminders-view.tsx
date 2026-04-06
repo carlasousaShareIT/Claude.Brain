@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { CalendarClock, ChevronDown, ChevronUp, CheckCheck, Plus } from 'lucide-react'
+import { CalendarClock, CheckCheck, Plus } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'

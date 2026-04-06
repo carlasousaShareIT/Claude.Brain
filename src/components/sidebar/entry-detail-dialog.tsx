@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Archive, Copy, ChevronDown, ChevronRight, MessageSquare, Send } from 'lucide-react'
 import { api } from '@/lib/api'

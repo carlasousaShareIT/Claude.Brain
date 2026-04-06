@@ -359,6 +359,14 @@ const createSchema = (db) => {
     db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.4.0");
   }
 
+  // Schema migration: add title column to mission_tasks (v1.5.0)
+  const taskCols150 = db.prepare("PRAGMA table_info(mission_tasks)").all().map(c => c.name);
+  if (!taskCols150.includes("title")) {
+    db.exec("ALTER TABLE mission_tasks ADD COLUMN title TEXT");
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.5.0");
+    console.log("[brain-db] migrated mission_tasks: added title column (v1.5.0)");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useMissions } from '@/hooks/use-missions'
 import { useUIStore } from '@/stores/ui-store'
 import { ResumeBanner } from './resume-banner'
+import { LiveActivityBar } from './live-activity-bar'
 import { MissionCard } from './mission-card'
 import { AgentsPanel } from './agents-panel'
 import { LocksPanel } from '@/components/locks/locks-panel'
@@ -65,6 +66,7 @@ export function MissionsView() {
       <div className="flex-1 overflow-y-auto px-4">
         <div className="space-y-3 pt-4 pb-4">
           <ResumeBanner />
+          <LiveActivityBar />
 
           {active.length === 0 && closed.length === 0 && (
             <p className="py-8 text-center text-xs text-[#62627a]">No missions found.</p>

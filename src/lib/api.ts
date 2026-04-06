@@ -14,6 +14,7 @@ import type {
   ResumableMission,
   SectionName,
   SessionSummary,
+  SessionLifecycle,
   HealthReport,
   AgentSummary,
   ContextProfile,
@@ -95,6 +96,9 @@ export const api = {
     ),
 
   getSessions: () => apiFetch<SessionSummary[]>('/memory/sessions'),
+
+  getSessionLifecycle: (id: string) =>
+    apiFetch<SessionLifecycle>(`/sessions/${id}`),
 
   getLog: () => apiFetch<LogEntry[]>('/memory/log'),
 
@@ -195,7 +199,7 @@ export const api = {
     name: string;
     project?: string;
     sessionId?: string;
-    tasks?: Array<{ description: string }>;
+    tasks?: Array<{ description: string; title?: string }>;
   }) => apiFetch<Mission>('/missions', { method: 'POST', body: body as unknown as BodyInit }),
 
   updateMission: (id: string, body: { name?: string; status?: string }) =>
@@ -204,7 +208,7 @@ export const api = {
   deleteMission: (id: string) =>
     apiFetch<{ ok: boolean }>(`/missions/${id}`, { method: 'DELETE' }),
 
-  addTasks: (missionId: string, body: { tasks: Array<{ description: string; blockedBy?: string[] }> }) =>
+  addTasks: (missionId: string, body: { tasks: Array<{ description: string; title?: string; blockedBy?: string[] }> }) =>
     apiFetch<Array<{ id: string; description: string; status: string; blockedBy: string[] }>>(`/missions/${missionId}/tasks`, { method: 'POST', body: body as unknown as BodyInit }),
 
   updateTask: (
@@ -217,6 +221,7 @@ export const api = {
       output?: string;
       blockers?: string[];
       blockedBy?: string[];
+      title?: string;
     },
   ) =>
     apiFetch<Mission>(`/missions/${missionId}/tasks/${taskId}`, {
