@@ -58,6 +58,12 @@ export function useSSE() {
       };
       es.addEventListener('profile-updated', onProfileEvent);
 
+      // Audit events
+      const onAuditEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['audit-reports'] });
+      };
+      es.addEventListener('brain-audit', onAuditEvent);
+
       es.onerror = () => {
         setServerLive(false);
         es.close();

@@ -337,6 +337,28 @@ const createSchema = (db) => {
     db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.3.0");
   }
 
+  // Schema migration: add audit_reports table (v1.4.0)
+  const auditTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_reports'").get();
+  if (!auditTableExists) {
+    db.exec(`
+      CREATE TABLE audit_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        trigger TEXT NOT NULL DEFAULT 'scheduled',
+        summary TEXT NOT NULL,
+        findings TEXT NOT NULL,
+        dismissed TEXT DEFAULT '[]'
+      );
+      CREATE INDEX idx_audit_reports_created_at ON audit_reports(created_at DESC);
+    `);
+    console.log("[brain-db] migrated: added audit_reports table");
+  }
+
+  // Update schema version to 1.4.0 if v1.4.0 migration ran
+  if (!auditTableExists) {
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.4.0");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

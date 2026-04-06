@@ -275,3 +275,36 @@ export interface Reminder {
   completedAt: string | null
   snoozedUntil: string | null
 }
+
+export interface AuditFinding {
+  id: string
+  type: 'duplicate' | 'stale' | 'noise' | 'promotable' | 'aging_decision'
+  severity: 'warning' | 'info'
+  section: string
+  entryId: number
+  text: string
+  detail: string
+  relatedEntryId?: number
+  relatedSection?: string
+  relatedText?: string
+  similarity?: number
+  ageDays?: number
+}
+
+export interface AuditSummary {
+  duplicates: number
+  stale: number
+  noise: number
+  promotable: number
+  agingDecisions: number
+  total: number
+}
+
+export interface AuditReport {
+  id: number
+  createdAt: string
+  trigger: 'scheduled' | 'manual'
+  summary: AuditSummary
+  findings: AuditFinding[]
+  dismissed: string[]
+}

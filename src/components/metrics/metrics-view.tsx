@@ -9,6 +9,7 @@ import { DecisionStatus } from './decision-status'
 import { ActivityChart } from './activity-chart'
 import { StalenessCard } from './staleness-card'
 import { HealthCard } from './health-card'
+import { AuditFindingsCard } from './audit-findings-card'
 
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
@@ -77,6 +78,10 @@ export function MetricsView() {
 
           <MetricCard title="Entry health" className="md:col-span-2">
             <HealthCard autoHealth={{ data: autoHealth.data, isLoading: autoHealth.isLoading }} />
+          </MetricCard>
+
+          <MetricCard title="Brain audit" className="md:col-span-2">
+            <AuditFindingsCard />
           </MetricCard>
         </div>
       </div>

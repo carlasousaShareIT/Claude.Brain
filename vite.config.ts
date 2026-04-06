@@ -21,6 +21,7 @@ export default defineConfig({
       '/locks': 'http://localhost:7777',
       '/agents': 'http://localhost:7777',
       '/orchestration': 'http://localhost:7777',
+      '/audit': 'http://localhost:7777',
     },
   },
 })

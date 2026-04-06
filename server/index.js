@@ -28,6 +28,8 @@ import locksRouter from "./routes/locks.js";
 import agentsRouter from "./routes/agents.js";
 import orchestrationRouter from "./routes/orchestration.js";
 import sseRouter from "./routes/sse.js";
+import auditRouter from "./routes/audit.js";
+import { startAuditSchedule, stopAuditSchedule } from "./brain-audit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7777;
@@ -66,12 +68,6 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Serve static assets from dist
-const distDir = path.join(__dirname, "..", "dist");
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-}
-
 // Mount route modules
 app.use(memoryRouter);
 app.use(archiveRouter);
@@ -88,6 +84,7 @@ app.use("/sessions", sessionsRouter);
 app.use("/locks", locksRouter);
 app.use("/agents", agentsRouter);
 app.use("/orchestration", orchestrationRouter);
+app.use("/audit", auditRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {
@@ -107,6 +104,12 @@ app.post("/memory/merge", (req, res, next) => {
     next(err);
   }
 });
+
+// Serve static assets from dist (after API routes to avoid interception)
+const distDir = path.join(__dirname, "..", "dist");
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+}
 
 // Global error handler — must be defined after all route mounts
 app.use((err, req, res, next) => {
@@ -130,9 +133,12 @@ startBackupSchedule();
 // Start heartbeat for SSE
 startHeartbeat();
 
+// Start brain audit schedule
+startAuditSchedule();
+
 // Graceful shutdown
-process.on("SIGINT", () => { closeDb(); process.exit(0); });
-process.on("SIGTERM", () => { closeDb(); process.exit(0); });
+process.on("SIGINT", () => { stopAuditSchedule(); closeDb(); process.exit(0); });
+process.on("SIGTERM", () => { stopAuditSchedule(); closeDb(); process.exit(0); });
 
 app.listen(PORT, () => {
   console.log(`\n🧠 Brain server running at http://localhost:${PORT}`);
@@ -188,5 +194,11 @@ app.listen(PORT, () => {
   console.log(`   POST /sessions/:id/end       — end a session with handoff`);
   console.log(`   GET  /sessions               — list sessions`);
   console.log(`   GET  /sessions/latest/handoff — latest handoff summary`);
-  console.log(`   GET  /sessions/:id           — single session\n`);
+  console.log(`   GET  /sessions/:id           — single session`);
+  console.log(`   GET  /audit/reports          — list audit reports`);
+  console.log(`   GET  /audit/reports/latest   — latest audit report`);
+  console.log(`   POST /audit/run              — trigger manual audit`);
+  console.log(`   POST /audit/dismiss          — dismiss a finding`);
+  console.log(`   POST /audit/promote          — promote decision to architecture`);
+  console.log(`   POST /audit/merge            — merge duplicate entries\n`);
 });

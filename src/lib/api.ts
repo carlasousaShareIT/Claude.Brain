@@ -21,6 +21,7 @@ import type {
   Experiment,
   ExperimentSummary,
   Observation,
+  AuditReport,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -370,6 +371,25 @@ export const api = {
       maxScore: number
       breakdown: Record<string, { weight: number; earned: number; passed: boolean; detail: string }>
     }>(`/orchestration/score${qs({ session: sessionId })}`),
+
+  // Audit
+  getAuditReports: (limit?: number) =>
+    apiFetch<AuditReport[]>(`/audit/reports${qs({ limit: limit?.toString() })}`),
+
+  getLatestAudit: () =>
+    apiFetch<AuditReport>('/audit/reports/latest'),
+
+  runAudit: () =>
+    apiFetch<AuditReport>('/audit/run', { method: 'POST' }),
+
+  dismissFinding: (body: { reportId: number; findingId: string }) =>
+    apiFetch<AuditReport>('/audit/dismiss', { method: 'POST', body: body as unknown as BodyInit }),
+
+  promoteDecision: (body: { decisionId: number }) =>
+    apiFetch<{ ok: boolean; promoted: string }>('/audit/promote', { method: 'POST', body: body as unknown as BodyInit }),
+
+  mergeEntries: (body: { keepSection: string; keepText: string; archiveSection: string; archiveText: string }) =>
+    apiFetch<{ ok: boolean; mergedText: string }>('/audit/merge', { method: 'POST', body: body as unknown as BodyInit }),
 };
 
 export { ApiError };
