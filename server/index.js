@@ -32,6 +32,7 @@ import auditRouter from "./routes/audit.js";
 import observerRouter from "./routes/observer.js";
 import { startAuditSchedule, stopAuditSchedule } from "./brain-audit.js";
 import { cleanup as cleanupObserver } from "./observer/watcher.js";
+import { startDirectoryWatcher, stopDirectoryWatcher } from "./observer/directory-watcher.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7777;
@@ -140,8 +141,8 @@ startHeartbeat();
 startAuditSchedule();
 
 // Graceful shutdown
-process.on("SIGINT", () => { cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
-process.on("SIGTERM", () => { cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
+process.on("SIGINT", () => { stopDirectoryWatcher(); cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
+process.on("SIGTERM", () => { stopDirectoryWatcher(); cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
 
 app.listen(PORT, () => {
   console.log(`\n🧠 Brain server running at http://localhost:${PORT}`);
@@ -211,4 +212,7 @@ app.listen(PORT, () => {
   console.log(`   GET  /observer/violations/stats — violation rates by agent`);
   console.log(`   GET  /observer/config        — observer config (calibration mode)`);
   console.log(`   PATCH /observer/config       — update observer config\n`);
+
+  // Start directory watcher failsafe for agent JSONL discovery
+  startDirectoryWatcher();
 });

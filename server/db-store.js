@@ -2703,6 +2703,14 @@ export const deleteAgentResult = (id) => {
 // Observer violations
 // ---------------------------------------------------------------------------
 
+export const findInProgressTaskForAgent = (agentName, sessionId) => {
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT mission_id, id FROM mission_tasks WHERE assigned_agent = ? AND session_id = ? AND status = 'in_progress' LIMIT 1"
+  ).get(agentName, sessionId);
+  return row ? { missionId: row.mission_id, taskId: row.id } : null;
+};
+
 export const createViolation = ({ agentName, sessionId, missionId, taskId, violationType, details, severity, actionTaken }) => {
   const db = getDb();
   const ts = now();

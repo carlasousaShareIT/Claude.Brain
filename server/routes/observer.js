@@ -11,17 +11,27 @@ import {
 import {
   listViolations,
   getViolationRateByAgent,
+  findInProgressTaskForAgent,
 } from "../db-store.js";
 
 const router = Router();
 
 // POST /watch — start watching an agent's JSONL log
 router.post("/watch", (req, res) => {
-  const { sessionId, jsonlPath, agentName, missionId, taskId, profile } = req.body;
+  let { sessionId, jsonlPath, agentName, missionId, taskId, profile } = req.body;
 
   if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
   if (!jsonlPath) return res.status(400).json({ error: "Missing jsonlPath" });
   if (!agentName) return res.status(400).json({ error: "Missing agentName" });
+
+  // Auto-resolve missionId/taskId from in-progress mission tasks
+  if (!missionId || !taskId) {
+    const match = findInProgressTaskForAgent(agentName, sessionId);
+    if (match) {
+      missionId = missionId || match.missionId;
+      taskId = taskId || match.taskId;
+    }
+  }
 
   const result = watchAgent({ sessionId, jsonlPath, agentName, missionId, taskId, profile });
   if (result.error) {
