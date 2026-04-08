@@ -19,7 +19,6 @@ const router = Router();
 
 // POST /agent-started — SubagentStart hook (accepts both custom and Claude Code payloads)
 router.post("/agent-started", (req, res) => {
-  // Support both our custom format and Claude Code's raw hook payload
   const sessionId = req.body.sessionId || req.body.session_id;
   const agentId = req.body.agentId || req.body.agent_id;
   const agentType = req.body.agentType || req.body.agent_type;
@@ -43,28 +42,27 @@ router.post("/agent-stopped", (req, res) => {
   const agentId = req.body.agentId || req.body.agent_id;
   const agentType = req.body.agentType || req.body.agent_type;
   const transcriptPath = req.body.agent_transcript_path || req.body.transcriptPath;
-  const agentLabel = agentType || agentId || "unknown";
 
   if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
 
-  // If we have the transcript, register then unwatch for final metrics
-  if (transcriptPath) {
-    const watchResult = watchAgent({ sessionId, jsonlPath: transcriptPath, agentName: agentLabel });
-    if (!watchResult.error) {
-      // Successfully started watching — now unwatch to process full log
-      unwatchAgent(sessionId, agentLabel);
-    }
-    // If already_watching (dir-watcher got it), just unwatch with correct name
-    if (watchResult.error === "already_watching") {
-      // The dir-watcher registered it with a generic name — unwatch won't match.
-      // That's OK, the dir-watcher's tailer will keep running.
+  // Enrich the dir-watcher's entry with the real agent name if we can match by path
+  if (transcriptPath && (agentType || agentId)) {
+    const watchers = getActiveWatchers();
+    const normalPath = transcriptPath.replace(/\\/g, "/");
+    const match = watchers.find(w => w.jsonlPath.replace(/\\/g, "/") === normalPath);
+    if (match && match.agentName === "subagents") {
+      // Dir-watcher registered with generic name — update it via unwatch + re-watch
+      const label = agentType || agentId;
+      unwatchAgent(match.sessionId, match.agentName);
+      watchAgent({ sessionId: match.sessionId, jsonlPath: transcriptPath, agentName: label });
     }
   }
 
   broadcastEvent("agent-stopped", {
     sessionId,
-    agentId,
+    agentId: agentId || null,
     agentType: agentType || "unknown",
+    transcriptPath: transcriptPath || null,
     ts: new Date().toISOString(),
   });
 
