@@ -42,7 +42,8 @@ export interface Task {
   id: string;
   title: string | null;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'interrupted' | 'verification_failed';
+  phase: string | null;
   assignedAgent: string | null;
   sessionId: string | null;
   output: string | null;
@@ -50,6 +51,15 @@ export interface Task {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  verificationCommand: string | null;
+  verificationResult: VerificationResult | null;
+}
+
+export interface MissionNote {
+  id: string;
+  text: string;
+  sessionId: string | null;
+  createdAt: string;
 }
 
 export interface Mission {
@@ -61,6 +71,7 @@ export interface Mission {
   createdInSession: string | null;
   completedAt: string | null;
   tasks: Task[];
+  notes: MissionNote[];
 }
 
 export interface Project {
@@ -179,6 +190,7 @@ export interface MissionSummary {
     in_progress: number;
     completed: number;
     blocked: number;
+    interrupted: number;
   };
 }
 
@@ -324,4 +336,54 @@ export interface AuditReport {
   summary: AuditSummary
   findings: AuditFinding[]
   dismissed: string[]
+}
+
+// Observer violations
+export interface ObserverViolation {
+  id: number
+  agent: string
+  sessionId: string | null
+  missionId: string | null
+  taskId: string | null
+  type: string
+  severity: 'warning' | 'error' | 'info'
+  message: string
+  context: Record<string, unknown> | null
+  createdAt: string
+}
+
+export interface ViolationStats {
+  total: number
+  byType: Record<string, number>
+  byAgent: Record<string, number>
+  bySeverity: Record<string, number>
+  recent24h: number
+}
+
+export interface ObserverConfig {
+  enabled: boolean
+  mode: 'passive' | 'active'
+  rules: Array<{ name: string; enabled: boolean }>
+}
+
+// Agent metrics
+export interface AgentMetricsSummary {
+  agent: string
+  totalToolCalls: number
+  toolCallDistribution: Record<string, number>
+  totalDurationMs: number
+  avgDurationMs: number
+  totalTokens: number
+  avgTokens: number
+  violationCount: number
+  taskCount: number
+  completedCount: number
+  lastActive: string | null
+}
+
+// Task verification
+export interface VerificationResult {
+  exitCode: number
+  output: string
+  verifiedAt: string
 }

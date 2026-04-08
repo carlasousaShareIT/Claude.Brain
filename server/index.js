@@ -29,7 +29,9 @@ import agentsRouter from "./routes/agents.js";
 import orchestrationRouter from "./routes/orchestration.js";
 import sseRouter from "./routes/sse.js";
 import auditRouter from "./routes/audit.js";
+import observerRouter from "./routes/observer.js";
 import { startAuditSchedule, stopAuditSchedule } from "./brain-audit.js";
+import { cleanup as cleanupObserver } from "./observer/watcher.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7777;
@@ -85,6 +87,7 @@ app.use("/locks", locksRouter);
 app.use("/agents", agentsRouter);
 app.use("/orchestration", orchestrationRouter);
 app.use("/audit", auditRouter);
+app.use("/observer", observerRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {
@@ -137,8 +140,8 @@ startHeartbeat();
 startAuditSchedule();
 
 // Graceful shutdown
-process.on("SIGINT", () => { stopAuditSchedule(); closeDb(); process.exit(0); });
-process.on("SIGTERM", () => { stopAuditSchedule(); closeDb(); process.exit(0); });
+process.on("SIGINT", () => { cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
+process.on("SIGTERM", () => { cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
 
 app.listen(PORT, () => {
   console.log(`\n🧠 Brain server running at http://localhost:${PORT}`);
@@ -200,5 +203,12 @@ app.listen(PORT, () => {
   console.log(`   POST /audit/run              — trigger manual audit`);
   console.log(`   POST /audit/dismiss          — dismiss a finding`);
   console.log(`   POST /audit/promote          — promote decision to architecture`);
-  console.log(`   POST /audit/merge            — merge duplicate entries\n`);
+  console.log(`   POST /audit/merge            — merge duplicate entries`);
+  console.log(`   POST /observer/watch         — start watching agent JSONL`);
+  console.log(`   POST /observer/unwatch       — stop watching, get final metrics`);
+  console.log(`   GET  /observer/watchers      — list active watchers`);
+  console.log(`   GET  /observer/violations    — list violations (?session, ?agent, ?type)`);
+  console.log(`   GET  /observer/violations/stats — violation rates by agent`);
+  console.log(`   GET  /observer/config        — observer config (calibration mode)`);
+  console.log(`   PATCH /observer/config       — update observer config\n`);
 });

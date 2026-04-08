@@ -4,10 +4,12 @@ import { Archive, Copy, ChevronDown, ChevronRight, MessageSquare, Send } from 'l
 import { api } from '@/lib/api'
 import { useBrain } from '@/hooks/use-brain'
 import { useArchived } from '@/hooks/use-archived'
+import { useProjects } from '@/hooks/use-projects'
 import { SECTION_COLORS, SECTION_LABELS } from '@/lib/constants'
 import { cn, timeAgo, entryText } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Dialog,
@@ -34,13 +36,15 @@ function formatDate(dateStr: string): string {
 }
 
 export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryDetailDialogProps) {
-  const { setConfidence } = useBrain()
+  const { setConfidence, retag } = useBrain()
   const { archive } = useArchived()
+  const { data: projectList } = useProjects()
   const queryClient = useQueryClient()
   const [copied, setCopied] = useState(false)
   const [sessionCopied, setSessionCopied] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [annotationText, setAnnotationText] = useState('')
+  const [projectEditOpen, setProjectEditOpen] = useState(false)
 
   const annotateMutation = useMutation({
     mutationFn: api.annotate,
@@ -157,16 +161,49 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
           </MetaField>
 
           <MetaField label="Projects">
-            <div className="flex flex-wrap gap-1">
-              {entry.project.map((p) => (
-                <Badge
-                  key={p}
-                  variant="secondary"
-                  className="h-4 px-1 text-[9px] bg-brain-surface text-muted-foreground"
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap gap-1">
+                {entry.project.map((p) => (
+                  <Badge
+                    key={p}
+                    variant="secondary"
+                    className="h-4 px-1 text-[9px] bg-brain-surface text-muted-foreground"
+                  >
+                    {p}
+                  </Badge>
+                ))}
+                <button
+                  onClick={() => setProjectEditOpen(!projectEditOpen)}
+                  className="text-[10px] text-brain-accent hover:text-brain-accent/80 transition-colors cursor-pointer"
                 >
-                  {p}
-                </Badge>
-              ))}
+                  {projectEditOpen ? 'done' : 'edit'}
+                </button>
+              </div>
+              {projectEditOpen && projectList && (
+                <div className="rounded-md bg-brain-surface/50 p-2 space-y-1 max-h-32 overflow-y-auto">
+                  {projectList.filter((p) => p.status === 'active').map((proj) => {
+                    const isChecked = entry.project.includes(proj.id)
+                    return (
+                      <label key={proj.id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            const newProjects = checked
+                              ? [...entry.project, proj.id]
+                              : entry.project.filter((p) => p !== proj.id)
+                            retag.mutate({
+                              section: section as SectionName,
+                              text,
+                              project: newProjects,
+                            })
+                          }}
+                        />
+                        <span className="text-xs text-foreground/80">{proj.name || proj.id}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </MetaField>
 

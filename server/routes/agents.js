@@ -7,6 +7,9 @@ import {
   getAgentResult,
   deleteAgentResult,
   getWebhooks,
+  listAgentMetrics,
+  getMetricsByTask,
+  getAgentMetricsSummary,
 } from "../db-store.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
@@ -53,6 +56,30 @@ router.delete("/results/:id", (req, res) => {
   fireWebhooks({ webhooks: getWebhooks() }, "agent-result-deleted", "agents", req.params.id);
   console.log(`[brain] agent result deleted: ${req.params.id}`);
   res.json({ ok: true });
+});
+
+// GET /agents/metrics — list agent metrics with filters
+router.get("/metrics", (req, res) => {
+  const sessionId = req.query.session || undefined;
+  const agentName = req.query.agent || undefined;
+  const missionId = req.query.mission || undefined;
+  const taskId = req.query.task || undefined;
+
+  // If task filter is provided, return single task metrics
+  if (taskId) {
+    const metrics = getMetricsByTask(taskId);
+    return res.json(metrics ? [metrics] : []);
+  }
+
+  const metrics = listAgentMetrics({ sessionId, agentName, missionId });
+  res.json(metrics);
+});
+
+// GET /agents/metrics/summary — aggregate metrics by agent
+router.get("/metrics/summary", (req, res) => {
+  const agentName = req.query.agent || undefined;
+  const summary = getAgentMetricsSummary({ agentName });
+  res.json(summary);
 });
 
 export default router;

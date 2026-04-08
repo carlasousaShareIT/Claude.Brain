@@ -11,7 +11,7 @@ export function useAutoHealth(enabled: boolean) {
   return useQuery({
     queryKey: ['health', 'auto'],
     queryFn: () => api.checkHealth({ repoPath: '' }),
-    enabled,
+    enabled: false,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })

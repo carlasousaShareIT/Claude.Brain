@@ -94,6 +94,13 @@ export function useSSE() {
       };
       es.addEventListener('brain-audit', onAuditEvent);
 
+      // Observer violation events
+      const onViolationEvent = () => {
+        queryClient.invalidateQueries({ queryKey: ['violations'] });
+        queryClient.invalidateQueries({ queryKey: ['violation-stats'] });
+      };
+      es.addEventListener('agent-violation', onViolationEvent);
+
       es.onerror = () => {
         setServerLive(false);
         es.close();

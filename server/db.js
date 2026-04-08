@@ -367,6 +367,171 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated mission_tasks: added title column (v1.5.0)");
   }
 
+  // Schema migration: add phase column to mission_tasks, mission_notes table,
+  // and recreate mission_tasks with updated CHECK constraint for 'interrupted' status (v1.6.0)
+  const taskCols160 = db.prepare("PRAGMA table_info(mission_tasks)").all().map(c => c.name);
+  const notesTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='mission_notes'").get();
+  if (!taskCols160.includes("phase") || !notesTableExists) {
+    // Add phase column if missing
+    if (!taskCols160.includes("phase")) {
+      db.exec("ALTER TABLE mission_tasks ADD COLUMN phase TEXT");
+      console.log("[brain-db] migrated mission_tasks: added phase column");
+    }
+
+    // Recreate mission_tasks to update CHECK constraint (add 'interrupted' status)
+    const currentCheck = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='mission_tasks'"
+    ).get();
+    if (currentCheck && !currentCheck.sql.includes("interrupted")) {
+      db.exec(`
+        CREATE TABLE mission_tasks_new (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+          description TEXT NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'blocked', 'interrupted')),
+          assigned_agent TEXT,
+          session_id TEXT,
+          output TEXT,
+          blockers TEXT DEFAULT '[]',
+          blocked_by TEXT DEFAULT '[]',
+          title TEXT,
+          phase TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          started_at TEXT,
+          completed_at TEXT
+        );
+        INSERT INTO mission_tasks_new SELECT id, mission_id, description, status, assigned_agent, session_id, output, blockers, blocked_by, title, phase, created_at, started_at, completed_at FROM mission_tasks;
+        DROP TABLE mission_tasks;
+        ALTER TABLE mission_tasks_new RENAME TO mission_tasks;
+        CREATE INDEX idx_mission_tasks_mission_id ON mission_tasks(mission_id);
+        CREATE INDEX idx_mission_tasks_status ON mission_tasks(status);
+        CREATE INDEX idx_mission_tasks_assigned_agent ON mission_tasks(assigned_agent);
+      `);
+      console.log("[brain-db] migrated mission_tasks: recreated with 'interrupted' in CHECK constraint");
+    }
+
+    // Create mission_notes table
+    if (!notesTableExists) {
+      db.exec(`
+        CREATE TABLE mission_notes (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+          text TEXT NOT NULL,
+          session_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_mission_notes_mission_id ON mission_notes(mission_id);
+      `);
+      console.log("[brain-db] migrated: added mission_notes table");
+    }
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.6.0");
+    console.log("[brain-db] schema version updated to 1.6.0");
+  }
+
+  // Schema migration: add observer_violations and agent_metrics tables (v1.7.0)
+  const violationsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='observer_violations'").get();
+  const agentMetricsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_metrics'").get();
+  if (!violationsTableExists || !agentMetricsTableExists) {
+    if (!violationsTableExists) {
+      db.exec(`
+        CREATE TABLE observer_violations (
+          id TEXT PRIMARY KEY,
+          agent_name TEXT NOT NULL,
+          session_id TEXT,
+          mission_id TEXT,
+          task_id TEXT,
+          violation_type TEXT NOT NULL CHECK (violation_type IN ('spiral_explorer', 'loop', 'late_output', 'stuck', 'role_violation')),
+          details TEXT,
+          severity TEXT DEFAULT 'warning' CHECK (severity IN ('warning', 'critical')),
+          action_taken TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_observer_violations_agent_name ON observer_violations(agent_name);
+        CREATE INDEX idx_observer_violations_session_id ON observer_violations(session_id);
+        CREATE INDEX idx_observer_violations_mission_id ON observer_violations(mission_id);
+      `);
+      console.log("[brain-db] migrated: added observer_violations table");
+    }
+
+    if (!agentMetricsTableExists) {
+      db.exec(`
+        CREATE TABLE agent_metrics (
+          id TEXT PRIMARY KEY,
+          agent_name TEXT NOT NULL,
+          session_id TEXT,
+          mission_id TEXT,
+          task_id TEXT,
+          tool_calls TEXT DEFAULT '{}',
+          total_calls INTEGER DEFAULT 0,
+          first_write_at TEXT,
+          commit_count INTEGER DEFAULT 0,
+          test_run_count INTEGER DEFAULT 0,
+          test_pass_count INTEGER DEFAULT 0,
+          test_fail_count INTEGER DEFAULT 0,
+          violation_count INTEGER DEFAULT 0,
+          duration_ms INTEGER DEFAULT 0,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX idx_agent_metrics_agent_name ON agent_metrics(agent_name);
+        CREATE INDEX idx_agent_metrics_session_id ON agent_metrics(session_id);
+        CREATE INDEX idx_agent_metrics_mission_id ON agent_metrics(mission_id);
+      `);
+      console.log("[brain-db] migrated: added agent_metrics table");
+    }
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.7.0");
+    console.log("[brain-db] schema version updated to 1.7.0");
+  }
+
+  // Schema migration: add verification columns to mission_tasks and 'verification_failed' status (v1.8.0)
+  const taskCols180 = db.prepare("PRAGMA table_info(mission_tasks)").all().map(c => c.name);
+  if (!taskCols180.includes("verification_command")) {
+    // Add verification columns
+    db.exec("ALTER TABLE mission_tasks ADD COLUMN verification_command TEXT");
+    db.exec("ALTER TABLE mission_tasks ADD COLUMN verification_result TEXT");
+    console.log("[brain-db] migrated mission_tasks: added verification_command and verification_result columns");
+
+    // Recreate mission_tasks to update CHECK constraint (add 'verification_failed' status)
+    const currentCheck180 = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='mission_tasks'"
+    ).get();
+    if (currentCheck180 && !currentCheck180.sql.includes("verification_failed")) {
+      db.exec(`
+        CREATE TABLE mission_tasks_new (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+          description TEXT NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'blocked', 'interrupted', 'verification_failed')),
+          assigned_agent TEXT,
+          session_id TEXT,
+          output TEXT,
+          blockers TEXT DEFAULT '[]',
+          blocked_by TEXT DEFAULT '[]',
+          title TEXT,
+          phase TEXT,
+          verification_command TEXT,
+          verification_result TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          started_at TEXT,
+          completed_at TEXT
+        );
+        INSERT INTO mission_tasks_new SELECT id, mission_id, description, status, assigned_agent, session_id, output, blockers, blocked_by, title, phase, verification_command, verification_result, created_at, started_at, completed_at FROM mission_tasks;
+        DROP TABLE mission_tasks;
+        ALTER TABLE mission_tasks_new RENAME TO mission_tasks;
+        CREATE INDEX idx_mission_tasks_mission_id ON mission_tasks(mission_id);
+        CREATE INDEX idx_mission_tasks_status ON mission_tasks(status);
+        CREATE INDEX idx_mission_tasks_assigned_agent ON mission_tasks(assigned_agent);
+      `);
+      console.log("[brain-db] migrated mission_tasks: recreated with 'verification_failed' in CHECK constraint");
+    }
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.8.0");
+    console.log("[brain-db] schema version updated to 1.8.0");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

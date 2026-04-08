@@ -6,14 +6,18 @@ const STATUS_COLORS: Record<Task['status'], string> = {
   completed: '#34d399',
   in_progress: '#22d3ee',
   blocked: '#fbbf24',
+  interrupted: '#f59e0b',
   pending: '#62627a',
+  verification_failed: '#ef4444',
 }
 
 const STATUS_ICONS: Record<Task['status'], string> = {
   completed: '✓',
   in_progress: '▶',
   blocked: '!',
+  interrupted: '⏸',
   pending: '○',
+  verification_failed: '✗',
 }
 
 function formatDuration(ms: number): string {

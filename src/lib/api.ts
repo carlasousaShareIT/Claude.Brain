@@ -23,6 +23,10 @@ import type {
   ExperimentSummary,
   Observation,
   AuditReport,
+  ObserverViolation,
+  ViolationStats,
+  ObserverConfig,
+  AgentMetricsSummary,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -395,6 +399,24 @@ export const api = {
 
   mergeEntries: (body: { keepSection: string; keepText: string; archiveSection: string; archiveText: string }) =>
     apiFetch<{ ok: boolean; mergedText: string }>('/audit/merge', { method: 'POST', body: body as unknown as BodyInit }),
+
+  // Observer violations
+  getViolations: (params?: { agent?: string; type?: string; session?: string }) =>
+    apiFetch<ObserverViolation[]>(`/observer/violations${qs({ agent: params?.agent, type: params?.type, session: params?.session })}`),
+
+  getViolationStats: () =>
+    apiFetch<ViolationStats>('/observer/violations/stats'),
+
+  getObserverConfig: () =>
+    apiFetch<ObserverConfig>('/observer/config'),
+
+  // Agent metrics
+  getAgentMetricsSummary: () =>
+    apiFetch<AgentMetricsSummary[]>('/agents/metrics/summary'),
+
+  // Mission task retry
+  retryTask: (missionId: string, taskId: string) =>
+    apiFetch<Mission>(`/missions/${missionId}/tasks/${taskId}/retry`, { method: 'PATCH' }),
 };
 
 export { ApiError };

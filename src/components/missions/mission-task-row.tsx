@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, RotateCcw, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { TASK_STATUS_ICONS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
 import type { Task } from '@/lib/types'
 
 const STATUS_BORDER_COLOR: Record<string, string> = {
@@ -11,6 +13,8 @@ const STATUS_BORDER_COLOR: Record<string, string> = {
   in_progress: 'border-l-brain-accent',
   completed: 'border-l-brain-green',
   blocked: 'border-l-brain-amber',
+  interrupted: 'border-l-brain-amber',
+  verification_failed: 'border-l-brain-red',
 }
 
 const STATUS_TEXT_COLOR: Record<string, string> = {
@@ -18,6 +22,8 @@ const STATUS_TEXT_COLOR: Record<string, string> = {
   in_progress: 'text-brain-accent',
   completed: 'text-brain-green',
   blocked: 'text-brain-amber',
+  interrupted: 'text-brain-amber',
+  verification_failed: 'text-brain-red',
 }
 
 interface MissionTaskRowProps {
@@ -35,8 +41,18 @@ interface MissionTaskRowProps {
 
 export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRowProps) {
   const [showOutput, setShowOutput] = useState(false)
+  const [showVerification, setShowVerification] = useState(false)
   const [copied, setCopied] = useState(false)
   const statusMeta = TASK_STATUS_ICONS[task.status]
+  const queryClient = useQueryClient()
+
+  const retryMutation = useMutation({
+    mutationFn: () => api.retryTask(missionId, task.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['missions'] })
+      queryClient.invalidateQueries({ queryKey: ['mission', missionId] })
+    },
+  })
 
   const handleCopyId = useCallback(async () => {
     await navigator.clipboard.writeText(task.id)
@@ -99,6 +115,29 @@ export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRow
           </Badge>
         )}
 
+        {/* Verification command badge */}
+        {task.verificationCommand && (
+          <Badge variant="outline" className="shrink-0 text-[10px] text-[#62627a] border-[#62627a]/30 gap-0.5">
+            <Terminal className="h-2.5 w-2.5" />
+            verified
+          </Badge>
+        )}
+
+        {/* Verification result toggle */}
+        {task.verificationResult && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => setShowVerification((prev) => !prev)}
+            className={cn(
+              'shrink-0',
+              task.verificationResult.exitCode === 0 ? 'text-brain-green' : 'text-brain-red',
+            )}
+          >
+            {showVerification ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          </Button>
+        )}
+
         {/* Output toggle */}
         {task.output && (
           <Button
@@ -133,13 +172,72 @@ export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRow
               Unblock
             </Button>
           )}
+          {task.status === 'interrupted' && (
+            <Button variant="ghost" size="xs" className="text-brain-accent" onClick={() => handleStatusChange('in_progress')}>
+              Resume
+            </Button>
+          )}
           {task.status === 'completed' && (
             <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => handleStatusChange('pending')}>
               Reset
             </Button>
           )}
+          {task.status === 'verification_failed' && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-brain-accent"
+              onClick={() => retryMutation.mutate()}
+              disabled={retryMutation.isPending}
+            >
+              <RotateCcw className={cn('size-3 mr-0.5', retryMutation.isPending && 'animate-spin')} />
+              Retry
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Verification failed details */}
+      {task.status === 'verification_failed' && task.verificationResult && (
+        <div className="ml-6 mt-1 mb-1 rounded-md bg-brain-red/5 border border-brain-red/10 px-3 py-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-medium text-brain-red">Verification failed</span>
+            <Badge variant="secondary" className="text-[9px] text-brain-red">
+              exit {task.verificationResult.exitCode}
+            </Badge>
+          </div>
+          {task.verificationCommand && (
+            <p className="text-[10px] text-[#62627a] font-mono mb-1">$ {task.verificationCommand}</p>
+          )}
+          {task.verificationResult.output && (
+            <pre className="text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              {task.verificationResult.output}
+            </pre>
+          )}
+        </div>
+      )}
+
+      {/* Verification result panel (expandable for non-failed states) */}
+      {showVerification && task.verificationResult && task.status !== 'verification_failed' && (
+        <div className="ml-6 mt-1 mb-1 rounded-md bg-brain-base px-3 py-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={cn('text-[10px] font-medium', task.verificationResult.exitCode === 0 ? 'text-brain-green' : 'text-brain-red')}>
+              Verification {task.verificationResult.exitCode === 0 ? 'passed' : 'failed'}
+            </span>
+            <Badge variant="secondary" className="text-[9px]">
+              exit {task.verificationResult.exitCode}
+            </Badge>
+          </div>
+          {task.verificationCommand && (
+            <p className="text-[10px] text-[#62627a] font-mono mb-1">$ {task.verificationCommand}</p>
+          )}
+          {task.verificationResult.output && (
+            <pre className="text-[10px] text-muted-foreground leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              {task.verificationResult.output}
+            </pre>
+          )}
+        </div>
+      )}
 
       {/* Output panel */}
       {showOutput && task.output && (

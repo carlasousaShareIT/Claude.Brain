@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -9,7 +9,7 @@ import { MissionTaskRow } from './mission-task-row'
 import { AgentTimeline } from './agent-timeline'
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { api } from '@/lib/api'
-import type { MissionSummary } from '@/lib/types'
+import type { MissionSummary, Task } from '@/lib/types'
 
 interface MissionCardProps {
   mission: MissionSummary
@@ -26,6 +26,44 @@ interface MissionCardProps {
   }) => void
 }
 
+function PhaseSection({
+  label,
+  tasks,
+  missionId,
+  onUpdateTask,
+}: {
+  label: string
+  tasks: Task[]
+  missionId: string
+  onUpdateTask: MissionCardProps['onUpdateTask']
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  return (
+    <div>
+      <button
+        className="flex items-center gap-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#62627a] hover:text-muted-foreground"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        {collapsed ? <ChevronRight className="size-2.5" /> : <ChevronDown className="size-2.5" />}
+        {label}
+        <span className="font-normal">({tasks.length})</span>
+      </button>
+      {!collapsed && (
+        <div className="space-y-0.5 pl-1">
+          {tasks.map((task) => (
+            <MissionTaskRow
+              key={task.id}
+              task={task}
+              missionId={missionId}
+              onUpdateTask={onUpdateTask}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdateTask }: MissionCardProps) {
   const [copiedId, setCopiedId] = useState(false)
   const isClosed = mission.status === 'completed' || mission.status === 'abandoned'
@@ -40,7 +78,30 @@ export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdate
 
   const tasks = fullMission?.tasks ?? []
 
-  const totalTasks = mission.taskCounts.pending + mission.taskCounts.in_progress + mission.taskCounts.completed + mission.taskCounts.blocked
+  // Group tasks by phase for sectioned rendering.
+  const phaseGroups = useMemo(() => {
+    const groups = new Map<string, Task[]>()
+    for (const task of tasks) {
+      const key = task.phase || ''
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(task)
+    }
+    // Sort: named phases alphabetically, ungrouped (empty key) last.
+    const sorted: { phase: string; label: string; tasks: Task[] }[] = []
+    const keys = [...groups.keys()].sort((a, b) => {
+      if (a === '') return 1
+      if (b === '') return -1
+      return a.localeCompare(b)
+    })
+    for (const key of keys) {
+      sorted.push({ phase: key, label: key || 'Ungrouped', tasks: groups.get(key)! })
+    }
+    return sorted
+  }, [tasks])
+
+  const hasPhases = phaseGroups.length > 1 || (phaseGroups.length === 1 && phaseGroups[0].phase !== '')
+
+  const totalTasks = mission.taskCounts.pending + mission.taskCounts.in_progress + mission.taskCounts.completed + mission.taskCounts.blocked + (mission.taskCounts.interrupted || 0)
   const completedCount = mission.taskCounts.completed
   const pct = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0
 
@@ -139,18 +200,32 @@ export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdate
             <p className="text-[10px] tabular-nums text-muted-foreground">{pct}%</p>
           </div>
 
-          {/* Task list */}
+          {/* Task list — grouped by phase when phases exist */}
           {tasks.length > 0 && (
-            <div className="space-y-0.5">
-              {tasks.map((task) => (
-                <MissionTaskRow
-                  key={task.id}
-                  task={task}
-                  missionId={mission.id}
-                  onUpdateTask={onUpdateTask}
-                />
-              ))}
-            </div>
+            hasPhases ? (
+              <div className="space-y-2">
+                {phaseGroups.map((group) => (
+                  <PhaseSection
+                    key={group.phase}
+                    label={group.label}
+                    tasks={group.tasks}
+                    missionId={mission.id}
+                    onUpdateTask={onUpdateTask}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {tasks.map((task) => (
+                  <MissionTaskRow
+                    key={task.id}
+                    task={task}
+                    missionId={mission.id}
+                    onUpdateTask={onUpdateTask}
+                  />
+                ))}
+              </div>
+            )
           )}
 
           {/* Agent execution timeline */}

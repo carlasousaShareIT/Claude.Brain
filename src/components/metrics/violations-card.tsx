@@ -1,0 +1,266 @@
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle, Shield, ShieldOff, Filter } from 'lucide-react'
+import { api } from '@/lib/api'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import type { ObserverViolation } from '@/lib/types'
+
+const SEVERITY_COLORS: Record<string, string> = {
+  error: 'text-brain-red bg-brain-red/10 border-brain-red/20',
+  warning: 'text-brain-amber bg-brain-amber/10 border-brain-amber/20',
+  info: 'text-brain-accent bg-brain-accent/10 border-brain-accent/20',
+}
+
+const SEVERITY_TEXT: Record<string, string> = {
+  error: 'text-brain-red',
+  warning: 'text-brain-amber',
+  info: 'text-brain-accent',
+}
+
+function relativeTime(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffMs = now - then
+  const seconds = Math.floor(diffMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) return `${days}d ago`
+  if (hours > 0) return `${hours}h ago`
+  if (minutes > 0) return `${minutes}m ago`
+  return 'just now'
+}
+
+function ViolationRow({ violation }: { violation: ObserverViolation }) {
+  return (
+    <div className="rounded-md bg-brain-base p-2.5 space-y-1">
+      <div className="flex items-start gap-2">
+        <Badge
+          variant="outline"
+          className={cn('shrink-0 text-[9px] border', SEVERITY_COLORS[violation.severity])}
+        >
+          {violation.severity}
+        </Badge>
+        <Badge
+          variant="secondary"
+          className="shrink-0 text-[9px] text-muted-foreground"
+        >
+          {violation.type}
+        </Badge>
+        <p className="text-xs text-foreground leading-snug flex-1 min-w-0">
+          {violation.message}
+        </p>
+        <span className="shrink-0 text-[10px] text-[#62627a]">
+          {relativeTime(violation.createdAt)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 pl-0.5">
+        {violation.agent && (
+          <span className="text-[10px] text-brain-accent">{violation.agent}</span>
+        )}
+        {violation.sessionId && (
+          <span className="text-[10px] text-[#62627a] font-mono">
+            {violation.sessionId.slice(0, 8)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function ViolationsCard() {
+  const [filterAgent, setFilterAgent] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const [filterSession, setFilterSession] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  const violations = useQuery({
+    queryKey: ['violations', filterAgent, filterType, filterSession],
+    queryFn: () =>
+      api.getViolations({
+        agent: filterAgent || undefined,
+        type: filterType || undefined,
+        session: filterSession || undefined,
+      }),
+  })
+
+  const stats = useQuery({
+    queryKey: ['violation-stats'],
+    queryFn: api.getViolationStats,
+  })
+
+  const config = useQuery({
+    queryKey: ['observer-config'],
+    queryFn: api.getObserverConfig,
+  })
+
+  // Derive unique agents and types for filter options.
+  const violationsList = Array.isArray(violations.data) ? violations.data : []
+  const { agents, types } = useMemo(() => {
+    const agentSet = new Set<string>()
+    const typeSet = new Set<string>()
+    for (const v of violationsList) {
+      if (v.agent) agentSet.add(v.agent)
+      typeSet.add(v.type)
+    }
+    return { agents: [...agentSet].sort(), types: [...typeSet].sort() }
+  }, [violationsList])
+
+  const isPassive = config.data?.mode === 'passive'
+
+  if (violations.isLoading && stats.isLoading) {
+    return (
+      <div className="flex items-center gap-2 p-4">
+        <p className="text-xs text-muted-foreground">Loading violations...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Header with calibration badge */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {stats.data && (
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="secondary" className="text-[10px]">
+                Total: {stats.data.total}
+              </Badge>
+              <Badge variant="secondary" className="text-[10px] text-brain-accent">
+                Last 24h: {stats.data.recent24h}
+              </Badge>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {config.data && (
+            <Badge
+              variant="outline"
+              className={cn(
+                'text-[10px] gap-1',
+                isPassive
+                  ? 'text-brain-amber border-brain-amber/30'
+                  : 'text-brain-green border-brain-green/30',
+              )}
+            >
+              {isPassive ? (
+                <>
+                  <ShieldOff className="h-3 w-3" />
+                  Passive (calibrating)
+                </>
+              ) : (
+                <>
+                  <Shield className="h-3 w-3" />
+                  Active
+                </>
+              )}
+            </Badge>
+          )}
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-[10px] text-[#62627a]"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-3 w-3 mr-1" />
+            Filter
+          </Button>
+        </div>
+      </div>
+
+      {/* Type breakdown badges */}
+      {stats.data?.byType && Object.keys(stats.data.byType).length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(stats.data.byType).map(([type, count]) => (
+            <Badge
+              key={type}
+              variant="secondary"
+              className={cn(
+                'text-[10px] cursor-pointer',
+                filterType === type ? 'text-brain-accent ring-1 ring-brain-accent/30' : 'text-[#62627a]',
+              )}
+              onClick={() => setFilterType(filterType === type ? '' : type)}
+            >
+              {type}: {count}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Filter bar */}
+      {showFilters && (
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={filterAgent}
+            onChange={(e) => setFilterAgent(e.target.value)}
+            className="h-7 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground outline-none focus:border-foreground/20"
+          >
+            <option value="">All agents</option>
+            {agents.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="h-7 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground outline-none focus:border-foreground/20"
+          >
+            <option value="">All types</option>
+            {types.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={filterSession}
+            onChange={(e) => setFilterSession(e.target.value)}
+            placeholder="Session ID..."
+            className="h-7 w-32 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground placeholder:text-[#8585a0] outline-none focus:border-foreground/20"
+          />
+          {(filterAgent || filterType || filterSession) && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-[10px] text-[#62627a]"
+              onClick={() => {
+                setFilterAgent('')
+                setFilterType('')
+                setFilterSession('')
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Violation list */}
+      {violationsList.length === 0 ? (
+        <div className="flex items-center gap-2 rounded-md bg-brain-base p-3">
+          <AlertTriangle className="h-4 w-4 text-[#62627a]" />
+          <p className="text-xs text-[#62627a]">No violations recorded.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-80 overflow-y-auto">
+          {violationsList.map((v) => (
+            <ViolationRow key={v.id} violation={v} />
+          ))}
+        </div>
+      )}
+
+      {/* Severity breakdown from stats */}
+      {stats.data?.bySeverity && Object.keys(stats.data.bySeverity).length > 0 && (
+        <div className="flex items-center gap-3 text-[10px]">
+          {Object.entries(stats.data.bySeverity).map(([severity, count]) => (
+            <span key={severity} className={cn('flex items-center gap-1', SEVERITY_TEXT[severity] ?? 'text-[#62627a]')}>
+              <span className="font-medium">{count}</span> {severity}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

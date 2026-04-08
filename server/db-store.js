@@ -6,6 +6,7 @@ import os from "os";
 import { getDb } from "./db.js";
 import { slugify, tokenize, similarity } from "./text-utils.js";
 import { detectSection, normalizeProject, entryText, getEntryProjects, filterByProject } from "./entry-utils.js";
+import { sanitizePrompt } from "./sanitize.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,11 +63,14 @@ const rowToTask = (row) => ({
   title: row.title || null,
   description: row.description,
   status: row.status || "pending",
+  phase: row.phase || null,
   assignedAgent: row.assigned_agent || null,
   sessionId: row.session_id || null,
   output: row.output || null,
   blockers: parseJson(row.blockers, []),
   blockedBy: parseJson(row.blocked_by, []),
+  verificationCommand: row.verification_command || null,
+  verificationResult: parseJson(row.verification_result, null),
   createdAt: row.created_at || null,
   startedAt: row.started_at || null,
   completedAt: row.completed_at || null,
@@ -152,6 +156,39 @@ const rowToProject = (row) => ({
 const rowToWebhook = (row) => ({
   url: row.url,
   events: parseJson(row.events, []),
+});
+
+const rowToViolation = (row) => ({
+  id: row.id,
+  agentName: row.agent_name,
+  sessionId: row.session_id || null,
+  missionId: row.mission_id || null,
+  taskId: row.task_id || null,
+  violationType: row.violation_type,
+  details: parseJson(row.details, {}),
+  severity: row.severity || "warning",
+  actionTaken: row.action_taken || null,
+  createdAt: row.created_at || null,
+});
+
+const rowToAgentMetrics = (row) => ({
+  id: row.id,
+  agentName: row.agent_name,
+  sessionId: row.session_id || null,
+  missionId: row.mission_id || null,
+  taskId: row.task_id || null,
+  toolCalls: parseJson(row.tool_calls, {}),
+  totalCalls: row.total_calls || 0,
+  firstWriteAt: row.first_write_at || null,
+  commitCount: row.commit_count || 0,
+  testRunCount: row.test_run_count || 0,
+  testPassCount: row.test_pass_count || 0,
+  testFailCount: row.test_fail_count || 0,
+  violationCount: row.violation_count || 0,
+  durationMs: row.duration_ms || 0,
+  inputTokens: row.input_tokens || 0,
+  outputTokens: row.output_tokens || 0,
+  createdAt: row.created_at || null,
 });
 
 const rowToLogEntry = (row) => ({
@@ -460,8 +497,8 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
   `);
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, title, description, status, blockers, blocked_by, created_at)
-    VALUES (?, ?, ?, ?, 'pending', '[]', ?, ?)
+    INSERT INTO mission_tasks (id, mission_id, title, description, status, phase, blockers, blocked_by, verification_command, created_at)
+    VALUES (?, ?, ?, ?, 'pending', ?, '[]', ?, ?, ?)
   `);
 
   const missionTasks = [];
@@ -471,17 +508,20 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
       const blockedBy = jsonStr(t.blockedBy || []);
-      insertTask.run(taskId, missionId, t.title || null, t.description, blockedBy, ts);
+      insertTask.run(taskId, missionId, t.title || null, t.description, t.phase || null, blockedBy, t.verificationCommand || null, ts);
       missionTasks.push({
         id: taskId,
         title: t.title || null,
         description: t.description,
         status: "pending",
+        phase: t.phase || null,
         assignedAgent: null,
         sessionId: null,
         output: null,
         blockers: [],
         blockedBy: t.blockedBy || [],
+        verificationCommand: t.verificationCommand || null,
+        verificationResult: null,
         createdAt: ts,
         startedAt: null,
         completedAt: null,
@@ -514,7 +554,7 @@ export const getMissions = (statusFilter, projectFilter) => {
   return rows.map(row => {
     const m = rowToMission(row);
     const tasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ?").all(row.id);
-    const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0 };
+    const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0, interrupted: 0, verification_failed: 0 };
     for (const t of tasks) counts[t.status] = (counts[t.status] || 0) + 1;
     return {
       id: m.id,
@@ -535,6 +575,8 @@ export const getMission = (id) => {
   const m = rowToMission(row);
   const taskRows = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ? ORDER BY created_at").all(id);
   m.tasks = taskRows.map(rowToTask);
+  const noteRows = db.prepare("SELECT * FROM mission_notes WHERE mission_id = ? ORDER BY created_at").all(id);
+  m.notes = noteRows.map(n => ({ id: n.id, text: n.text, sessionId: n.session_id || null, createdAt: n.created_at }));
   return m;
 };
 
@@ -576,8 +618,8 @@ export const addTasksToMission = (missionId, tasks) => {
   const existingTaskIds = new Set(db.prepare("SELECT id FROM mission_tasks").all().map(r => r.id));
 
   const insertTask = db.prepare(`
-    INSERT INTO mission_tasks (id, mission_id, title, description, status, blockers, blocked_by, created_at)
-    VALUES (?, ?, ?, ?, 'pending', '[]', ?, ?)
+    INSERT INTO mission_tasks (id, mission_id, title, description, status, phase, blockers, blocked_by, verification_command, created_at)
+    VALUES (?, ?, ?, ?, 'pending', ?, '[]', ?, ?, ?)
   `);
 
   const newTasks = [];
@@ -586,17 +628,20 @@ export const addTasksToMission = (missionId, tasks) => {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
       const blockedBy = jsonStr(t.blockedBy || []);
-      insertTask.run(taskId, missionId, t.title || null, t.description, blockedBy, ts);
+      insertTask.run(taskId, missionId, t.title || null, t.description, t.phase || null, blockedBy, t.verificationCommand || null, ts);
       newTasks.push({
         id: taskId,
         title: t.title || null,
         description: t.description,
         status: "pending",
+        phase: t.phase || null,
         assignedAgent: null,
         sessionId: null,
         output: null,
         blockers: [],
         blockedBy: t.blockedBy || [],
+        verificationCommand: t.verificationCommand || null,
+        verificationResult: null,
         createdAt: ts,
         startedAt: null,
         completedAt: null,
@@ -613,6 +658,33 @@ export const addTasksToMission = (missionId, tasks) => {
   return newTasks;
 };
 
+// ---------------------------------------------------------------------------
+// Mission Notes
+// ---------------------------------------------------------------------------
+
+export const addMissionNote = (missionId, { text, sessionId }) => {
+  const db = getDb();
+  const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
+  if (!mission) return null;
+
+  const ts = now();
+  const existingIds = new Set(db.prepare("SELECT id FROM mission_notes").all().map(r => r.id));
+  const noteId = slugify(text, "n", existingIds);
+
+  db.prepare(`
+    INSERT INTO mission_notes (id, mission_id, text, session_id, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(noteId, missionId, text, sessionId || null, ts);
+
+  return { id: noteId, text, sessionId: sessionId || null, createdAt: ts };
+};
+
+export const getMissionNotes = (missionId) => {
+  const db = getDb();
+  const rows = db.prepare("SELECT * FROM mission_notes WHERE mission_id = ? ORDER BY created_at").all(missionId);
+  return rows.map(n => ({ id: n.id, text: n.text, sessionId: n.session_id || null, createdAt: n.created_at }));
+};
+
 export const updateTask = (missionId, taskId, updates) => {
   const db = getDb();
   const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
@@ -622,29 +694,48 @@ export const updateTask = (missionId, taskId, updates) => {
   if (!taskRow) return { task: null, missionAutoCompleted: false, unblockedTasks: [] };
 
   const ts = now();
-  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description, title } = updates;
+  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description, title, phase, verificationCommand, verificationResult } = updates;
 
   let newTitle = title !== undefined ? title : (taskRow.title || null);
   let newDescription = description !== undefined ? description : taskRow.description;
+  let newPhase = phase !== undefined ? phase : (taskRow.phase || null);
   let newAgent = assignedAgent !== undefined ? assignedAgent : taskRow.assigned_agent;
   let newSessionId = sessionId !== undefined ? sessionId : taskRow.session_id;
   let newOutput = output !== undefined ? output : taskRow.output;
   let newBlockers = blockers !== undefined ? jsonStr(blockers) : taskRow.blockers;
   let newBlockedBy = blockedBy !== undefined ? jsonStr(blockedBy) : taskRow.blocked_by;
+  let newVerificationCommand = verificationCommand !== undefined ? verificationCommand : (taskRow.verification_command || null);
+  let newVerificationResult = verificationResult !== undefined ? (verificationResult === null ? null : JSON.stringify(verificationResult)) : taskRow.verification_result;
   let newStatus = status !== undefined ? status : taskRow.status;
   let startedAt = taskRow.started_at;
   let completedAt = taskRow.completed_at;
 
+  // Quality gate: if task has a verificationCommand and status is being set to completed,
+  // check the verification result
+  if (status === "completed" && (newVerificationCommand || taskRow.verification_command)) {
+    if (!verificationResult) {
+      // Reject: verification result required but not provided
+      return { task: null, missionAutoCompleted: false, unblockedTasks: [], autoObservations: [], verificationRequired: true };
+    }
+    if (verificationResult.exitCode !== 0) {
+      // Verification failed — override status
+      newStatus = "verification_failed";
+      newVerificationResult = JSON.stringify(verificationResult);
+      completedAt = null; // Not actually completed
+    }
+  }
+
   if (status !== undefined) {
     if (status === "in_progress" && !startedAt) startedAt = ts;
-    if (status === "completed" && !completedAt) completedAt = ts;
+    if (newStatus === "completed" && !completedAt) completedAt = ts;
   }
 
   db.prepare(`
-    UPDATE mission_tasks SET title = ?, description = ?, status = ?, assigned_agent = ?,
-      session_id = ?, output = ?, blockers = ?, blocked_by = ?, started_at = ?, completed_at = ?
+    UPDATE mission_tasks SET title = ?, description = ?, status = ?, phase = ?, assigned_agent = ?,
+      session_id = ?, output = ?, blockers = ?, blocked_by = ?, verification_command = ?,
+      verification_result = ?, started_at = ?, completed_at = ?
     WHERE id = ? AND mission_id = ?
-  `).run(newTitle, newDescription, newStatus, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, startedAt, completedAt, taskId, missionId);
+  `).run(newTitle, newDescription, newStatus, newPhase, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, newVerificationCommand, newVerificationResult, startedAt, completedAt, taskId, missionId);
 
   // Auto-unblock dependents when a task completes
   const unblockedTasks = [];
@@ -690,11 +781,15 @@ export const getResumableMissions = (projectFilter) => {
 
   for (const row of missions) {
     const allTasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ? ORDER BY created_at").all(row.id).map(rowToTask);
-    const resumableTasks = allTasks.filter(t => ["pending", "in_progress", "blocked"].includes(t.status));
+    const resumableTasks = allTasks.filter(t => ["pending", "in_progress", "blocked", "interrupted", "verification_failed"].includes(t.status));
     if (resumableTasks.length === 0) continue;
 
-    const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0 };
+    const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0, interrupted: 0, verification_failed: 0 };
     for (const t of allTasks) counts[t.status] = (counts[t.status] || 0) + 1;
+
+    // Include notes for resumability context
+    const noteRows = db.prepare("SELECT * FROM mission_notes WHERE mission_id = ? ORDER BY created_at").all(row.id);
+    const notes = noteRows.map(n => ({ id: n.id, text: n.text, sessionId: n.session_id || null, createdAt: n.created_at }));
 
     results.push({
       id: row.id,
@@ -704,7 +799,10 @@ export const getResumableMissions = (projectFilter) => {
       inProgressTasks: counts.in_progress,
       completedTasks: counts.completed,
       blockedTasks: counts.blocked,
+      interruptedTasks: counts.interrupted,
+      verificationFailedTasks: counts.verification_failed,
       tasks: resumableTasks,
+      notes,
     });
   }
 
@@ -1732,7 +1830,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
 
   // Mission tasks
   if (mission) {
-    const statusIcon = { pending: "○", in_progress: "▶", completed: "✓", blocked: "✗" };
+    const statusIcon = { pending: "○", in_progress: "▶", completed: "✓", blocked: "✗", interrupted: "⏸" };
     lines.push(`## Active Mission: ${mission.name}`);
     lines.push(`- **ID:** ${mission.id}`);
     lines.push(`- **Status:** ${mission.status}`);
@@ -1740,7 +1838,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
     lines.push("");
     lines.push("### Tasks");
     const missionTasks = compact
-      ? (mission.tasks || []).filter(t => t.status === "pending" || t.status === "in_progress")
+      ? (mission.tasks || []).filter(t => t.status === "pending" || t.status === "in_progress" || t.status === "interrupted")
       : (mission.tasks || []);
     for (const t of missionTasks) {
       const icon = statusIcon[t.status] || "?";
@@ -1753,7 +1851,8 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
     lines.push("");
   }
 
-  return lines.join("\n");
+  const output = lines.join("\n");
+  return compact ? sanitizePrompt(output) : output;
 };
 
 // ---------------------------------------------------------------------------
@@ -1967,18 +2066,54 @@ export const getSessions = () => {
     track(row.session_id, row.created_at, "decisions", parseJson(row.project, []));
   }
 
+  // Merge registered sessions from the sessions table
+  const registeredRows = db.prepare("SELECT * FROM sessions").all();
+  for (const row of registeredRows) {
+    if (!sessions[row.id]) {
+      // Session exists only in the sessions table (no brain writes)
+      sessions[row.id] = {
+        id: row.id,
+        count: 0,
+        sections: {},
+        projects: new Set(row.project ? [row.project] : []),
+        earliest: row.started_at || null,
+        latest: row.started_at || null,
+      };
+    }
+    const s = sessions[row.id];
+    // Attach registered session metadata
+    s.registeredLabel = row.label || null;
+    s.registeredProject = row.project || null;
+    s.startedAt = row.started_at || null;
+    s.endedAt = row.ended_at || null;
+    s.handoff = row.handoff ? JSON.parse(row.handoff) : null;
+    if (row.project) s.projects.add(row.project);
+  }
+
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const result = Object.values(sessions).map(s => {
-    let label = null;
-    if (uuidPattern.test(s.id)) {
+    // Prefer DB label from registered session, fall back to .label file
+    let label = s.registeredLabel || null;
+    if (!label && uuidPattern.test(s.id)) {
       try {
         label = fs.readFileSync(path.join(os.homedir(), ".claude", "sessions", s.id + ".label"), "utf8").trim();
       } catch { /* no label file */ }
     }
-    return { ...s, label, projects: [...s.projects] };
+    return {
+      ...s,
+      label,
+      projects: [...s.projects],
+      registeredLabel: undefined,
+      registeredProject: undefined,
+    };
   });
 
-  return result.sort((a, b) => (b.latest || "").localeCompare(a.latest || ""));
+  // Sort by latest activity — use latest from entries or startedAt, whichever is more recent
+  return result.sort((a, b) => {
+    const aTime = [a.latest, a.startedAt].filter(Boolean).sort().pop() || "";
+    const bTime = [b.latest, b.startedAt].filter(Boolean).sort().pop() || "";
+    return bTime.localeCompare(aTime);
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -2184,8 +2319,24 @@ export const endSession = (id, { handoff } = {}) => {
   db.prepare("UPDATE sessions SET ended_at = datetime('now'), handoff = ? WHERE id = ?").run(
     handoff ? JSON.stringify(handoff) : null, id
   );
+
+  // Stale in-progress task recovery: transition tasks assigned to this session that are still in_progress to interrupted
+  const staleTasks = db.prepare(
+    "SELECT id, mission_id FROM mission_tasks WHERE session_id = ? AND status = 'in_progress'"
+  ).all(id);
+  if (staleTasks.length > 0) {
+    const ts = now();
+    const interruptStmt = db.prepare(
+      "UPDATE mission_tasks SET status = 'interrupted' WHERE id = ? AND mission_id = ?"
+    );
+    for (const t of staleTasks) {
+      interruptStmt.run(t.id, t.mission_id);
+    }
+    console.log(`[brain] session ${id} ended: ${staleTasks.length} in-progress task(s) transitioned to interrupted`);
+  }
+
   const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
-  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
+  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null, interruptedTasks: staleTasks.length };
 };
 
 export const getSessionById = (id) => {
@@ -2546,4 +2697,122 @@ export const deleteAgentResult = (id) => {
   const db = getDb();
   const result = db.prepare("DELETE FROM agent_results WHERE id = ?").run(id);
   return result.changes > 0;
+};
+
+// ---------------------------------------------------------------------------
+// Observer violations
+// ---------------------------------------------------------------------------
+
+export const createViolation = ({ agentName, sessionId, missionId, taskId, violationType, details, severity, actionTaken }) => {
+  const db = getDb();
+  const ts = now();
+  const existingIds = new Set(db.prepare("SELECT id FROM observer_violations").all().map(r => r.id));
+  const id = slugify(agentName + " " + violationType, "viol", existingIds);
+
+  db.prepare(`
+    INSERT INTO observer_violations (id, agent_name, session_id, mission_id, task_id, violation_type, details, severity, action_taken, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, agentName, sessionId || null, missionId || null, taskId || null, violationType, details ? JSON.stringify(details) : null, severity || "warning", actionTaken || null, ts);
+
+  return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, violationType, details: details || {}, severity: severity || "warning", actionTaken: actionTaken || null, createdAt: ts };
+};
+
+export const listViolations = ({ sessionId, agentName, missionId, type, limit } = {}) => {
+  const db = getDb();
+  let sql = "SELECT * FROM observer_violations WHERE 1=1";
+  const params = [];
+  if (sessionId) { sql += " AND session_id = ?"; params.push(sessionId); }
+  if (agentName) { sql += " AND agent_name = ?"; params.push(agentName); }
+  if (missionId) { sql += " AND mission_id = ?"; params.push(missionId); }
+  if (type) { sql += " AND violation_type = ?"; params.push(type); }
+  sql += " ORDER BY created_at DESC";
+  if (limit) { sql += " LIMIT ?"; params.push(limit); }
+  return db.prepare(sql).all(...params).map(rowToViolation);
+};
+
+export const getViolationRateByAgent = () => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT agent_name, violation_type, COUNT(*) as count
+    FROM observer_violations
+    GROUP BY agent_name, violation_type
+    ORDER BY agent_name, count DESC
+  `).all();
+  return rows.map(r => ({ agentName: r.agent_name, violationType: r.violation_type, count: r.count }));
+};
+
+// ---------------------------------------------------------------------------
+// Agent metrics
+// ---------------------------------------------------------------------------
+
+export const createAgentMetrics = ({ agentName, sessionId, missionId, taskId, toolCalls, totalCalls, firstWriteAt, commitCount, testRunCount, testPassCount, testFailCount, violationCount, durationMs, inputTokens, outputTokens }) => {
+  const db = getDb();
+  const ts = now();
+  const existingIds = new Set(db.prepare("SELECT id FROM agent_metrics").all().map(r => r.id));
+  const id = slugify(agentName + " " + (taskId || "metrics"), "am", existingIds);
+
+  db.prepare(`
+    INSERT INTO agent_metrics (id, agent_name, session_id, mission_id, task_id, tool_calls, total_calls, first_write_at, commit_count, test_run_count, test_pass_count, test_fail_count, violation_count, duration_ms, input_tokens, output_tokens, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, agentName, sessionId || null, missionId || null, taskId || null, JSON.stringify(toolCalls || {}), totalCalls || 0, firstWriteAt || null, commitCount || 0, testRunCount || 0, testPassCount || 0, testFailCount || 0, violationCount || 0, durationMs || 0, inputTokens || 0, outputTokens || 0, ts);
+
+  return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: violationCount || 0, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
+};
+
+export const getMetricsByTask = (taskId) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM agent_metrics WHERE task_id = ?").get(taskId);
+  return row ? rowToAgentMetrics(row) : null;
+};
+
+export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}) => {
+  const db = getDb();
+  let sql = "SELECT * FROM agent_metrics WHERE 1=1";
+  const params = [];
+  if (sessionId) { sql += " AND session_id = ?"; params.push(sessionId); }
+  if (agentName) { sql += " AND agent_name = ?"; params.push(agentName); }
+  if (missionId) { sql += " AND mission_id = ?"; params.push(missionId); }
+  sql += " ORDER BY created_at DESC";
+  if (limit) { sql += " LIMIT ?"; params.push(limit); }
+  return db.prepare(sql).all(...params).map(rowToAgentMetrics);
+};
+
+export const getAgentMetricsSummary = ({ agentName, role } = {}) => {
+  const db = getDb();
+  let sql = `
+    SELECT agent_name,
+      COUNT(*) as task_count,
+      AVG(total_calls) as avg_total_calls,
+      AVG(commit_count) as avg_commit_count,
+      AVG(test_run_count) as avg_test_run_count,
+      AVG(test_pass_count) as avg_test_pass_count,
+      AVG(test_fail_count) as avg_test_fail_count,
+      AVG(violation_count) as avg_violation_count,
+      AVG(duration_ms) as avg_duration_ms,
+      AVG(input_tokens) as avg_input_tokens,
+      AVG(output_tokens) as avg_output_tokens,
+      SUM(total_calls) as sum_total_calls,
+      SUM(violation_count) as sum_violations
+    FROM agent_metrics
+    WHERE 1=1
+  `;
+  const params = [];
+  if (agentName) { sql += " AND agent_name = ?"; params.push(agentName); }
+  sql += " GROUP BY agent_name ORDER BY task_count DESC";
+
+  return db.prepare(sql).all(...params).map(r => ({
+    agentName: r.agent_name,
+    taskCount: r.task_count,
+    avgTotalCalls: Math.round(r.avg_total_calls * 100) / 100,
+    avgCommitCount: Math.round(r.avg_commit_count * 100) / 100,
+    avgTestRunCount: Math.round(r.avg_test_run_count * 100) / 100,
+    avgTestPassCount: Math.round(r.avg_test_pass_count * 100) / 100,
+    avgTestFailCount: Math.round(r.avg_test_fail_count * 100) / 100,
+    avgViolationCount: Math.round(r.avg_violation_count * 100) / 100,
+    avgDurationMs: Math.round(r.avg_duration_ms),
+    avgInputTokens: Math.round(r.avg_input_tokens),
+    avgOutputTokens: Math.round(r.avg_output_tokens),
+    sumTotalCalls: r.sum_total_calls,
+    sumViolations: r.sum_violations,
+  }));
 };

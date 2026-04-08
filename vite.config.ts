@@ -22,6 +22,7 @@ export default defineConfig({
       '/agents': 'http://localhost:7777',
       '/orchestration': 'http://localhost:7777',
       '/audit': 'http://localhost:7777',
+      '/observer': 'http://localhost:7777',
     },
   },
 })

@@ -3,6 +3,7 @@
 import { Router } from "express";
 import { startSession, endSession, getSessionById, listSessions, getLatestHandoff, searchSessions } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
+import { unwatchAllForSession } from "../observer/watcher.js";
 
 const router = Router();
 
@@ -22,6 +23,13 @@ router.post("/:id/end", (req, res) => {
   const session = endSession(req.params.id, { handoff });
   if (!session) return res.status(404).json({ error: "Session not found" });
   if (session.error === "already_ended") return res.status(409).json({ error: session.message });
+
+  // Unwatch all agents for this session
+  const unwatchResults = unwatchAllForSession(req.params.id);
+  if (unwatchResults.length > 0) {
+    console.log(`[brain] session:end ${req.params.id} — unwatched ${unwatchResults.length} agent(s)`);
+  }
+
   broadcastEvent("session:end", { id: req.params.id, ts: new Date().toISOString() });
   console.log(`[brain] session:end ${req.params.id}`);
   res.json(session);

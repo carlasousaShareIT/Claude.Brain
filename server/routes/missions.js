@@ -19,11 +19,13 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  addMissionNote,
+  getMissionNotes,
 } from "../db-store.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
 const VALID_MISSION_STATUSES = new Set(["active", "completed", "abandoned"]);
-const VALID_TASK_STATUSES = new Set(["pending", "in_progress", "completed", "blocked"]);
+const VALID_TASK_STATUSES = new Set(["pending", "in_progress", "completed", "blocked", "interrupted", "verification_failed"]);
 
 const router = Router();
 
@@ -190,15 +192,22 @@ router.post("/:id/tasks", (req, res) => {
 
 // PATCH /missions/:id/tasks/:taskId — update a task
 router.patch("/:id/tasks/:taskId", (req, res) => {
-  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description, title } = req.body;
+  const { status, assignedAgent, sessionId, output, blockers, blockedBy, description, title, phase, verificationCommand, verificationResult } = req.body;
 
   if (status !== undefined && !VALID_TASK_STATUSES.has(status)) {
     return res.status(400).json({ error: `Invalid status "${status}". Must be one of: ${[...VALID_TASK_STATUSES].join(", ")}` });
   }
 
-  const { task, missionAutoCompleted, unblockedTasks, autoObservations } = updateTask(req.params.id, req.params.taskId, {
-    status, assignedAgent, sessionId, output, blockers, blockedBy, description, title,
+  const result = updateTask(req.params.id, req.params.taskId, {
+    status, assignedAgent, sessionId, output, blockers, blockedBy, description, title, phase, verificationCommand, verificationResult,
   });
+
+  // Quality gate: verification required but not provided
+  if (result.verificationRequired) {
+    return res.status(422).json({ error: "Task has a verificationCommand — verificationResult is required when completing" });
+  }
+
+  const { task, missionAutoCompleted, unblockedTasks, autoObservations } = result;
 
   if (!task) {
     // Determine whether mission or task is missing
@@ -235,6 +244,52 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
   fireWebhooks({ webhooks: getWebhooks() }, "task-updated", "missions", `${task.description} → ${task.status}`);
   console.log(`[brain] task updated: ${task.id} in ${req.params.id} — status=${task.status}`);
   res.json({ ...task, unblockedTasks });
+});
+
+// PATCH /missions/:id/tasks/:taskId/retry — retry a verification_failed task
+router.patch("/:id/tasks/:taskId/retry", (req, res) => {
+  const mission = getMission(req.params.id);
+  if (!mission) return res.status(404).json({ error: "Mission not found" });
+
+  const task = mission.tasks.find(t => t.id === req.params.taskId);
+  if (!task) return res.status(404).json({ error: "Task not found" });
+
+  if (task.status !== "verification_failed") {
+    return res.status(400).json({ error: `Can only retry verification_failed tasks. Current status: "${task.status}"` });
+  }
+
+  const { task: updatedTask } = updateTask(req.params.id, req.params.taskId, {
+    status: "in_progress",
+    verificationResult: null,
+    output: null,
+  });
+
+  if (!updatedTask) return res.status(500).json({ error: "Failed to update task" });
+
+  const now = new Date().toISOString();
+  broadcastEvent("task-updated", { missionId: req.params.id, missionName: mission.name, task: updatedTask, ts: now });
+  fireWebhooks({ webhooks: getWebhooks() }, "task-updated", "missions", `${updatedTask.description} → retry`);
+  console.log(`[brain] task retried: ${updatedTask.id} in ${req.params.id}`);
+  res.json(updatedTask);
+});
+
+// POST /missions/:id/notes — add a note to a mission
+router.post("/:id/notes", (req, res) => {
+  const { text, sessionId } = req.body;
+  if (!text) return res.status(400).json({ error: "Missing text" });
+
+  const note = addMissionNote(req.params.id, { text, sessionId });
+  if (!note) return res.status(404).json({ error: "Mission not found" });
+
+  console.log(`[brain] note added to mission ${req.params.id}: ${note.id}`);
+  res.status(201).json(note);
+});
+
+// GET /missions/:id/notes — list notes for a mission
+router.get("/:id/notes", (req, res) => {
+  const mission = getMission(req.params.id);
+  if (!mission) return res.status(404).json({ error: "Mission not found" });
+  res.json(getMissionNotes(req.params.id));
 });
 
 export default router;

@@ -28,4 +28,6 @@ export const TASK_STATUS_ICONS: Record<string, { icon: string; cls: string }> = 
   in_progress: { icon: '▶', cls: 'in_progress' },
   completed: { icon: '✓', cls: 'completed' },
   blocked: { icon: '!', cls: 'blocked' },
+  interrupted: { icon: '⏸', cls: 'interrupted' },
+  verification_failed: { icon: '✗', cls: 'verification_failed' },
 };
