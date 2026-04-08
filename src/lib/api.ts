@@ -27,6 +27,7 @@ import type {
   ViolationStats,
   ObserverConfig,
   AgentMetricsSummary,
+  ObserverWatcher,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -103,6 +104,9 @@ export const api = {
 
   getSessionLifecycle: (id: string) =>
     apiFetch<SessionLifecycle>(`/sessions/${id}`),
+
+  listSessionLifecycles: (params?: { limit?: number; project?: string }) =>
+    apiFetch<SessionLifecycle[]>(`/sessions${qs({ limit: params?.limit?.toString(), project: params?.project })}`),
 
   getLog: () => apiFetch<LogEntry[]>('/memory/log'),
 
@@ -409,6 +413,12 @@ export const api = {
 
   getObserverConfig: () =>
     apiFetch<ObserverConfig>('/observer/config'),
+
+  getWatchers: () =>
+    apiFetch<ObserverWatcher[]>('/observer/watchers'),
+
+  patchObserverConfig: (config: Partial<ObserverConfig>) =>
+    apiFetch<ObserverConfig>('/observer/config', { method: 'PATCH', body: config as unknown as BodyInit }),
 
   // Agent metrics
   getAgentMetricsSummary: () =>

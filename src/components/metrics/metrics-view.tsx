@@ -10,8 +10,6 @@ import { ActivityChart } from './activity-chart'
 import { StalenessCard } from './staleness-card'
 import { HealthCard } from './health-card'
 import { AuditFindingsCard } from './audit-findings-card'
-import { ViolationsCard } from './violations-card'
-import { AgentMetricsCard } from './agent-metrics-card'
 
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
@@ -84,14 +82,6 @@ export function MetricsView() {
 
           <MetricCard title="Brain audit" className="md:col-span-2">
             <AuditFindingsCard />
-          </MetricCard>
-
-          <MetricCard title="Observer violations" className="md:col-span-2">
-            <ViolationsCard />
-          </MetricCard>
-
-          <MetricCard title="Agent metrics" className="md:col-span-2">
-            <AgentMetricsCard />
           </MetricCard>
         </div>
       </div>

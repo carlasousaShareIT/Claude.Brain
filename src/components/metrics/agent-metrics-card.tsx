@@ -51,9 +51,17 @@ function AgentMetricRow({ agent }: { agent: AgentMetricsSummary }) {
     <div className="rounded-md bg-brain-base p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-sm font-semibold text-foreground truncate">{agent.agent}</span>
+          <span className="text-xs font-semibold text-foreground truncate">{agent.agent}</span>
+          {agent.sessionLabel && (
+            <span className="text-[10px] text-foreground/60 truncate">{agent.sessionLabel}</span>
+          )}
+          {agent.project && (
+            <Badge variant="secondary" className="text-[9px] text-muted-foreground shrink-0">
+              {agent.project}
+            </Badge>
+          )}
           {agent.violationCount > 0 && (
-            <Badge variant="outline" className="text-[9px] text-brain-red border-brain-red/30">
+            <Badge variant="outline" className="text-[9px] text-brain-red border-brain-red/30 shrink-0">
               {agent.violationCount} violations
             </Badge>
           )}
@@ -69,17 +77,14 @@ function AgentMetricRow({ agent }: { agent: AgentMetricsSummary }) {
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-[10px] text-[#62627a]">
-          <span className="text-foreground/70 font-medium">{agent.taskCount}</span> tasks
-        </span>
-        <span className="text-[10px] text-[#62627a]">
-          <span className="text-foreground/70 font-medium">{agent.completedCount}</span> completed
-        </span>
+        {agent.sessionId && (
+          <span className="text-[10px] font-mono text-brain-accent">{agent.sessionId.slice(0, 8)}</span>
+        )}
         <span className="text-[10px] text-[#62627a]">
           <span className="text-foreground/70 font-medium">{agent.totalToolCalls}</span> tool calls
         </span>
         <span className="text-[10px] text-[#62627a]">
-          avg <span className="text-foreground/70 font-medium">{formatDuration(agent.avgDurationMs)}</span>
+          <span className="text-foreground/70 font-medium">{formatDuration(agent.totalDurationMs)}</span>
         </span>
         <span className="text-[10px] text-[#62627a]">
           <span className="text-foreground/70 font-medium">{formatTokens(agent.totalTokens)}</span> tokens
@@ -182,7 +187,6 @@ export function AgentMetricsCard() {
         <SortHeader label="Duration" sortKey="totalDurationMs" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
         <SortHeader label="Tokens" sortKey="totalTokens" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
         <SortHeader label="Violations" sortKey="violationCount" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-        <SortHeader label="Tasks" sortKey="taskCount" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
       </div>
 
       {/* Agent cards */}

@@ -158,18 +158,30 @@ const rowToWebhook = (row) => ({
   events: parseJson(row.events, []),
 });
 
-const rowToViolation = (row) => ({
-  id: row.id,
-  agentName: row.agent_name,
-  sessionId: row.session_id || null,
-  missionId: row.mission_id || null,
-  taskId: row.task_id || null,
-  violationType: row.violation_type,
-  details: parseJson(row.details, {}),
-  severity: row.severity || "warning",
-  actionTaken: row.action_taken || null,
-  createdAt: row.created_at || null,
-});
+const rowToViolation = (row) => {
+  const details = parseJson(row.details, {});
+  const type = row.violation_type;
+  // Generate human-readable message from type + details
+  let message = type;
+  if (type === "stuck") message = `Agent silent for ${details.silenceSeconds || "?"}s (threshold: ${details.threshold || 60}s)`;
+  else if (type === "spiral_explorer") message = `${details.readCount || "?"} consecutive reads without a write`;
+  else if (type === "loop") message = `Repeated ${details.tool || "tool"} call ${details.repeatCount || "?"}x`;
+  else if (type === "late_output") message = `${details.callsSinceOutput || "?"} calls without producing output`;
+  else if (type === "role_violation") message = details.action || "Role boundary exceeded";
+
+  return {
+    id: row.id,
+    agent: row.agent_name,
+    sessionId: row.session_id || null,
+    missionId: row.mission_id || null,
+    taskId: row.task_id || null,
+    type,
+    severity: row.severity || "warning",
+    message,
+    context: details,
+    createdAt: row.created_at || null,
+  };
+};
 
 const rowToAgentMetrics = (row) => ({
   id: row.id,
@@ -2740,13 +2752,20 @@ export const listViolations = ({ sessionId, agentName, missionId, type, limit } 
 
 export const getViolationRateByAgent = () => {
   const db = getDb();
-  const rows = db.prepare(`
-    SELECT agent_name, violation_type, COUNT(*) as count
-    FROM observer_violations
-    GROUP BY agent_name, violation_type
-    ORDER BY agent_name, count DESC
-  `).all();
-  return rows.map(r => ({ agentName: r.agent_name, violationType: r.violation_type, count: r.count }));
+  const total = db.prepare("SELECT COUNT(*) as c FROM observer_violations").get().c;
+  const byTypeRows = db.prepare("SELECT violation_type, COUNT(*) as c FROM observer_violations GROUP BY violation_type").all();
+  const byAgentRows = db.prepare("SELECT agent_name, COUNT(*) as c FROM observer_violations GROUP BY agent_name").all();
+  const bySeverityRows = db.prepare("SELECT severity, COUNT(*) as c FROM observer_violations GROUP BY severity").all();
+  const recent24h = db.prepare("SELECT COUNT(*) as c FROM observer_violations WHERE created_at > datetime('now', '-1 day')").get().c;
+
+  const byType = {};
+  for (const r of byTypeRows) byType[r.violation_type] = r.c;
+  const byAgent = {};
+  for (const r of byAgentRows) byAgent[r.agent_name] = r.c;
+  const bySeverity = {};
+  for (const r of bySeverityRows) bySeverity[r.severity] = r.c;
+
+  return { total, byType, byAgent, bySeverity, recent24h };
 };
 
 // ---------------------------------------------------------------------------
@@ -2756,13 +2775,30 @@ export const getViolationRateByAgent = () => {
 export const createAgentMetrics = ({ agentName, sessionId, missionId, taskId, toolCalls, totalCalls, firstWriteAt, commitCount, testRunCount, testPassCount, testFailCount, violationCount, durationMs, inputTokens, outputTokens }) => {
   const db = getDb();
   const ts = now();
-  const existingIds = new Set(db.prepare("SELECT id FROM agent_metrics").all().map(r => r.id));
-  const id = slugify(agentName + " " + (taskId || "metrics"), "am", existingIds);
 
-  db.prepare(`
-    INSERT INTO agent_metrics (id, agent_name, session_id, mission_id, task_id, tool_calls, total_calls, first_write_at, commit_count, test_run_count, test_pass_count, test_fail_count, violation_count, duration_ms, input_tokens, output_tokens, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, agentName, sessionId || null, missionId || null, taskId || null, JSON.stringify(toolCalls || {}), totalCalls || 0, firstWriteAt || null, commitCount || 0, testRunCount || 0, testPassCount || 0, testFailCount || 0, violationCount || 0, durationMs || 0, inputTokens || 0, outputTokens || 0, ts);
+  // Upsert: if same session+agent already has metrics, replace with latest (from full file read)
+  const existing = sessionId
+    ? db.prepare("SELECT id FROM agent_metrics WHERE session_id = ? AND agent_name = ?").get(sessionId, agentName)
+    : null;
+
+  const id = existing ? existing.id : (() => {
+    const existingIds = new Set(db.prepare("SELECT id FROM agent_metrics").all().map(r => r.id));
+    return slugify(agentName + " " + (taskId || sessionId || "metrics"), "am", existingIds);
+  })();
+
+  if (existing) {
+    db.prepare(`
+      UPDATE agent_metrics SET tool_calls = ?, total_calls = ?, first_write_at = ?, commit_count = ?,
+        test_run_count = ?, test_pass_count = ?, test_fail_count = ?, violation_count = ?,
+        duration_ms = ?, input_tokens = ?, output_tokens = ?, created_at = ?
+      WHERE id = ?
+    `).run(JSON.stringify(toolCalls || {}), totalCalls || 0, firstWriteAt || null, commitCount || 0, testRunCount || 0, testPassCount || 0, testFailCount || 0, violationCount || 0, durationMs || 0, inputTokens || 0, outputTokens || 0, ts, id);
+  } else {
+    db.prepare(`
+      INSERT INTO agent_metrics (id, agent_name, session_id, mission_id, task_id, tool_calls, total_calls, first_write_at, commit_count, test_run_count, test_pass_count, test_fail_count, violation_count, duration_ms, input_tokens, output_tokens, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, agentName, sessionId || null, missionId || null, taskId || null, JSON.stringify(toolCalls || {}), totalCalls || 0, firstWriteAt || null, commitCount || 0, testRunCount || 0, testPassCount || 0, testFailCount || 0, violationCount || 0, durationMs || 0, inputTokens || 0, outputTokens || 0, ts);
+  }
 
   return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: violationCount || 0, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
 };
@@ -2785,42 +2821,32 @@ export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}
   return db.prepare(sql).all(...params).map(rowToAgentMetrics);
 };
 
-export const getAgentMetricsSummary = ({ agentName, role } = {}) => {
+export const getAgentMetricsSummary = ({ agentName } = {}) => {
   const db = getDb();
   let sql = `
-    SELECT agent_name,
-      COUNT(*) as task_count,
-      AVG(total_calls) as avg_total_calls,
-      AVG(commit_count) as avg_commit_count,
-      AVG(test_run_count) as avg_test_run_count,
-      AVG(test_pass_count) as avg_test_pass_count,
-      AVG(test_fail_count) as avg_test_fail_count,
-      AVG(violation_count) as avg_violation_count,
-      AVG(duration_ms) as avg_duration_ms,
-      AVG(input_tokens) as avg_input_tokens,
-      AVG(output_tokens) as avg_output_tokens,
-      SUM(total_calls) as sum_total_calls,
-      SUM(violation_count) as sum_violations
-    FROM agent_metrics
+    SELECT am.*, s.label as session_label, s.project as session_project
+    FROM agent_metrics am
+    LEFT JOIN sessions s ON am.session_id = s.id
     WHERE 1=1
   `;
   const params = [];
-  if (agentName) { sql += " AND agent_name = ?"; params.push(agentName); }
-  sql += " GROUP BY agent_name ORDER BY task_count DESC";
+  if (agentName) { sql += " AND am.agent_name = ?"; params.push(agentName); }
+  sql += " ORDER BY am.created_at DESC";
 
   return db.prepare(sql).all(...params).map(r => ({
-    agentName: r.agent_name,
-    taskCount: r.task_count,
-    avgTotalCalls: Math.round(r.avg_total_calls * 100) / 100,
-    avgCommitCount: Math.round(r.avg_commit_count * 100) / 100,
-    avgTestRunCount: Math.round(r.avg_test_run_count * 100) / 100,
-    avgTestPassCount: Math.round(r.avg_test_pass_count * 100) / 100,
-    avgTestFailCount: Math.round(r.avg_test_fail_count * 100) / 100,
-    avgViolationCount: Math.round(r.avg_violation_count * 100) / 100,
-    avgDurationMs: Math.round(r.avg_duration_ms),
-    avgInputTokens: Math.round(r.avg_input_tokens),
-    avgOutputTokens: Math.round(r.avg_output_tokens),
-    sumTotalCalls: r.sum_total_calls,
-    sumViolations: r.sum_violations,
+    agent: r.agent_name,
+    sessionId: r.session_id || null,
+    sessionLabel: r.session_label || null,
+    project: r.session_project || null,
+    totalToolCalls: r.total_calls || 0,
+    toolCallDistribution: parseJson(r.tool_calls, {}),
+    totalDurationMs: r.duration_ms || 0,
+    avgDurationMs: r.duration_ms || 0,
+    totalTokens: (r.input_tokens || 0) + (r.output_tokens || 0),
+    avgTokens: (r.input_tokens || 0) + (r.output_tokens || 0),
+    violationCount: r.violation_count || 0,
+    taskCount: 1,
+    completedCount: 1,
+    lastActive: r.created_at || null,
   }));
 };

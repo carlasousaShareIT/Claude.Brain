@@ -369,6 +369,9 @@ export interface ObserverConfig {
 // Agent metrics
 export interface AgentMetricsSummary {
   agent: string
+  sessionId: string | null
+  sessionLabel: string | null
+  project: string | null
   totalToolCalls: number
   toolCallDistribution: Record<string, number>
   totalDurationMs: number
@@ -379,6 +382,36 @@ export interface AgentMetricsSummary {
   taskCount: number
   completedCount: number
   lastActive: string | null
+}
+
+// Observer watchers
+export interface ObserverWatcher {
+  key: string
+  sessionId: string
+  agentName: string
+  jsonlPath: string
+  missionId: string | null
+  taskId: string | null
+  profile: { name: string; role: string }
+  startedAt: string
+  currentMetrics: {
+    toolCalls: Record<string, number>
+    totalCalls: number
+    firstWriteAt: string | null
+    commitCount: number
+    testRunCount: number
+    testPassCount: number
+    testFailCount: number
+    violationCount: number
+    durationMs: number
+    inputTokens: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
+    outputTokens: number
+  }
+  totalEvents: number
+  unknownEvents: number
+  lastEventAt: string | null
 }
 
 // Task verification

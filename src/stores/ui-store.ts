@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
-type ActiveTab = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments';
+type ActiveTab = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer';
 
-const VALID_TABS: ActiveTab[] = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments'];
+const VALID_TABS: ActiveTab[] = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer'];
 
 function tabFromHash(): ActiveTab {
   const hash = window.location.hash.replace('#', '');

@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { cn } from '@/lib/utils'
 
-type TabId = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments'
+type TabId = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer'
 
 interface TabHelpContent {
   purpose: string
@@ -40,6 +40,11 @@ const HELP_CONTENT: Record<TabId, TabHelpContent> = {
     purpose: 'Process experiment tracker. Tests whether practices (TDD, specific tooling, pair programming style) actually improve agent-assisted work.',
     claudeUses: 'Creates experiments when users say "let\'s try X." Records observations after relevant tasks. Auto-generates observations from mission metrics on mission completion. The effectiveness endpoint analyzes sentiment trends.',
     howToRead: 'Active experiments collect observations with positive/negative/neutral sentiment. The effectiveness panel shows trend direction and suggests concluding when signal is clear (10+ observations, 80%+ one sentiment).',
+  },
+  observer: {
+    purpose: 'Real-time observer dashboard. Monitors live agent sessions via JSONL file tailing, tracks violations, and shows agent execution metrics.',
+    claudeUses: 'The observer watches agent JSONL log files (source of truth). Directory watcher auto-registers new agents. SubagentStart/Stop hooks enrich watcher entries with real agent types. Violations are passive (calibrating) — collecting data before promoting to active enforcement.',
+    howToRead: 'Live watchers show currently observed agents with event counts and metrics. Violations list shows detected issues (all warnings in passive mode). Agent metrics aggregate tool calls, duration, and tokens across sessions.',
   },
 }
 

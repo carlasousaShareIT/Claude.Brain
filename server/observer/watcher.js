@@ -169,8 +169,10 @@ export const watchAgent = ({ sessionId, jsonlPath, agentName, missionId, taskId,
   let totalEvents = 0;
   let unknownEvents = 0;
   let formatDriftWarned = false;
+  let lastEventAt = null;
 
   const tailer = new FileTailer(jsonlPath, (events) => {
+    lastEventAt = new Date().toISOString();
     for (const event of events) {
       totalEvents++;
 
@@ -247,6 +249,7 @@ export const watchAgent = ({ sessionId, jsonlPath, agentName, missionId, taskId,
     startedAt: new Date().toISOString(),
     totalEvents: () => totalEvents,
     unknownEvents: () => unknownEvents,
+    lastEventAt: () => lastEventAt,
   };
 
   watchers.set(key, entry);
@@ -271,20 +274,45 @@ export const unwatchAgent = (sessionId, agentName) => {
   // Stop tailing
   entry.tailer.stop();
 
-  // Compute final metrics from the full log
+  // Compute final metrics + violations from the full log
   const fullEngine = new ObserverEngine({ agentProfile: entry.profile });
   const allEvents = entry.tailer.readFull();
   for (const event of allEvents) {
     fullEngine.processEvent(event);
   }
   const metrics = fullEngine.getMetrics();
+  const finalViolations = fullEngine.getViolations();
+
+  // Persist violations that the live tailer may have missed
+  if (finalViolations.length > 0) {
+    for (const v of finalViolations) {
+      if (observerConfig.mode === "passive") v.severity = "warning";
+      try {
+        createViolation({
+          agentName: v.agentName,
+          sessionId: entry.sessionId,
+          missionId: entry.missionId || null,
+          taskId: entry.taskId || null,
+          violationType: v.type,
+          details: v.details,
+          severity: v.severity,
+        });
+      } catch (err) {
+        // Skip duplicates silently
+      }
+    }
+    console.log(`[observer] persisted ${finalViolations.length} violations from full read for ${key}`);
+  }
+
+  // Resolve parent session for subagents (so metrics join to the sessions table)
+  const parentSessionId = extractParentSessionFromPath(entry.jsonlPath) || entry.sessionId;
 
   // Persist final metrics to DB
   let savedMetrics = null;
   try {
     savedMetrics = createAgentMetrics({
       agentName: entry.agentName,
-      sessionId: entry.sessionId,
+      sessionId: parentSessionId,
       missionId: entry.missionId,
       taskId: entry.taskId,
       toolCalls: metrics.toolCalls,
@@ -325,19 +353,36 @@ export const getActiveWatchers = () => {
       currentMetrics: entry.engine.getMetrics(),
       totalEvents: entry.totalEvents(),
       unknownEvents: entry.unknownEvents(),
+      lastEventAt: entry.lastEventAt(),
     });
   }
   return result;
+};
+
+/** Extract parent session UUID from a JSONL path.
+ *  Subagents: .../<uuid>/subagents/<agent-id>.jsonl → uuid
+ *  Main agents: .../<uuid>.jsonl → uuid */
+const extractParentSessionFromPath = (jsonlPath) => {
+  const normalized = jsonlPath.replace(/\\/g, "/");
+  const subMatch = normalized.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/subagents\//);
+  if (subMatch) return subMatch[1];
+  const mainMatch = normalized.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
+  if (mainMatch) return mainMatch[1];
+  return null;
 };
 
 export const unwatchAllForSession = (sessionId) => {
   const results = [];
   const toUnwatch = [];
   for (const [key, entry] of watchers) {
-    if (entry.sessionId === sessionId) toUnwatch.push(entry.agentName);
+    // Match by direct session ID OR by parent session in JSONL path
+    const parentSession = extractParentSessionFromPath(entry.jsonlPath);
+    if (entry.sessionId === sessionId || parentSession === sessionId) {
+      toUnwatch.push({ sessionId: entry.sessionId, agentName: entry.agentName });
+    }
   }
-  for (const agentName of toUnwatch) {
-    const result = unwatchAgent(sessionId, agentName);
+  for (const { sessionId: sid, agentName } of toUnwatch) {
+    const result = unwatchAgent(sid, agentName);
     results.push({ agentName, ...result });
   }
   return results;

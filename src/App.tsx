@@ -9,7 +9,7 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 
-const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments'] as const
+const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer'] as const
 type ActiveTab = typeof VALID_TABS[number]
 
 function App() {
