@@ -5,14 +5,20 @@ import {
   watchAgent,
   unwatchAgent,
   getActiveWatchers,
+  getStuckAgents,
   getObserverConfig,
   setObserverConfig,
 } from "../observer/watcher.js";
 import {
   listViolations,
+  clearViolations,
   getViolationRateByAgent,
   findInProgressTaskForAgent,
+  listAgentMetrics,
+  getAgentMetricsSummary,
+  recordSessionActivity,
 } from "../db-store.js";
+import { getDb } from "../db.js";
 import { broadcastEvent } from "../broadcast.js";
 
 const router = Router();
@@ -31,6 +37,11 @@ router.post("/agent-started", (req, res) => {
     agentType: agentType || "unknown",
     ts: new Date().toISOString(),
   });
+
+  // Record agent_spawn activity
+  if (sessionId) {
+    try { recordSessionActivity(sessionId, "agent_spawn", agentType || agentId || "unknown"); } catch {}
+  }
 
   console.log(`[observer] agent started: ${agentId} (${agentType || "unknown"}) in session ${sessionId}`);
   res.json({ ok: true });
@@ -65,6 +76,11 @@ router.post("/agent-stopped", (req, res) => {
     transcriptPath: transcriptPath || null,
     ts: new Date().toISOString(),
   });
+
+  // Record reviewer_run if agent type matches
+  if (sessionId && agentType && /review/i.test(agentType)) {
+    try { recordSessionActivity(sessionId, "reviewer_run", agentId || agentType); } catch {}
+  }
 
   console.log(`[observer] agent stopped: ${agentId || "unknown"} (${agentType || "unknown"}) in session ${sessionId}`);
   res.json({ ok: true });
@@ -131,6 +147,49 @@ router.get("/violations", (req, res) => {
 // GET /violations/stats — aggregate violation rates by agent and type
 router.get("/violations/stats", (req, res) => {
   res.json(getViolationRateByAgent());
+});
+
+// GET /stuck — currently-stuck agents (for orchestrator polling)
+router.get("/stuck", (req, res) => {
+  const stuck = getStuckAgents();
+  res.json({ count: stuck.length, agents: stuck });
+});
+
+// DELETE /violations — clear violations with optional filters
+router.delete("/violations", (req, res) => {
+  const type = req.query.type || undefined;
+  const before = req.query.before || undefined;
+  const result = clearViolations({ type, before });
+  console.log(`[observer] cleared ${result.deleted} violation(s)${type ? ` (type=${type})` : ""}${before ? ` (before=${before})` : ""}`);
+  res.json(result);
+});
+
+// GET /metrics — list agent metrics with filters
+router.get("/metrics", (req, res) => {
+  const sessionId = req.query.session || undefined;
+  const agentName = req.query.agent || undefined;
+  const missionId = req.query.mission || undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
+  res.json(listAgentMetrics({ sessionId, agentName, missionId, limit }));
+});
+
+// GET /metrics/summary — agent metrics with session context
+router.get("/metrics/summary", (req, res) => {
+  const agentName = req.query.agent || undefined;
+  res.json(getAgentMetricsSummary({ agentName }));
+});
+
+// DELETE /metrics — clear agent metrics with optional filters
+router.delete("/metrics", (req, res) => {
+  const db = getDb();
+  let sql = "DELETE FROM agent_metrics WHERE 1=1";
+  const params = [];
+  if (req.query.session) { sql += " AND session_id = ?"; params.push(req.query.session); }
+  if (req.query.agent) { sql += " AND agent_name = ?"; params.push(req.query.agent); }
+  if (req.query.before) { sql += " AND created_at < ?"; params.push(req.query.before); }
+  const result = db.prepare(sql).run(...params);
+  console.log(`[observer] cleared ${result.changes} agent metric(s)`);
+  res.json({ deleted: result.changes });
 });
 
 // GET /config — read observer config (calibration mode)

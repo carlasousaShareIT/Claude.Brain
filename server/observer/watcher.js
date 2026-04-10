@@ -3,10 +3,11 @@
 
 import fs from "fs";
 import { ObserverEngine } from "./engine.js";
-import { createViolation, createAgentMetrics, getProfiles } from "../db-store.js";
+import { createViolation, createAgentMetrics, getProfiles, updateTask } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 
 const POLL_INTERVAL_MS = 2500; // 2.5 seconds
+const HEARTBEAT_INTERVAL_MS = 15000; // 15 seconds — check for stuck agents
 const FORMAT_DRIFT_THRESHOLD = 0.2; // 20% unknown events → warning
 
 // Known JSONL event types from Claude Code
@@ -253,6 +254,7 @@ export const watchAgent = ({ sessionId, jsonlPath, agentName, missionId, taskId,
   };
 
   watchers.set(key, entry);
+  if (watchers.size === 1) startHeartbeat();
   console.log(`[observer] watching ${key} — ${jsonlPath}`);
 
   return {
@@ -332,7 +334,9 @@ export const unwatchAgent = (sessionId, agentName) => {
     savedMetrics = metrics;
   }
 
+  activeStuckPeriods.delete(key);
   watchers.delete(key);
+  if (watchers.size === 0) stopHeartbeat();
   console.log(`[observer] unwatched ${key} — final metrics persisted`);
 
   return { metrics: savedMetrics };
@@ -389,6 +393,7 @@ export const unwatchAllForSession = (sessionId) => {
 };
 
 export const cleanup = () => {
+  stopHeartbeat();
   const keys = [...watchers.keys()];
   for (const key of keys) {
     const entry = watchers.get(key);
@@ -403,4 +408,117 @@ export const cleanup = () => {
   }
   watchers.clear();
   console.log("[observer] all watchers cleaned up");
+};
+
+// ---------------------------------------------------------------------------
+// Heartbeat — real-time stuck detection (fires while agent is silent)
+// ---------------------------------------------------------------------------
+
+// Track which agents have an active stuck period to avoid duplicate violations
+const activeStuckPeriods = new Map(); // key → timestamp of stuck start
+
+let heartbeatTimer = null;
+
+const startHeartbeat = () => {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => checkStuckAgents(), HEARTBEAT_INTERVAL_MS);
+  console.log("[observer] heartbeat started");
+};
+
+const stopHeartbeat = () => {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+    console.log("[observer] heartbeat stopped");
+  }
+};
+
+const checkStuckAgents = () => {
+  for (const [key, entry] of watchers) {
+    const silenceMs = entry.engine.getSilenceMs();
+    const thresholdSec = entry.engine.getStuckThreshold();
+    if (silenceMs === null || thresholdSec === null) continue;
+
+    const silenceSec = silenceMs / 1000;
+    if (silenceSec < thresholdSec) {
+      // Agent is active — clear any previous stuck period
+      activeStuckPeriods.delete(key);
+      continue;
+    }
+
+    // Agent is stuck — check if we already fired for this stuck period
+    if (activeStuckPeriods.has(key)) continue;
+    activeStuckPeriods.set(key, Date.now());
+
+    const severity = observerConfig.mode === "passive" ? "warning" : "critical";
+    const details = { silenceSeconds: Math.round(silenceSec), threshold: thresholdSec, source: "heartbeat" };
+
+    // Persist violation
+    try {
+      createViolation({
+        agentName: entry.agentName,
+        sessionId: entry.sessionId,
+        missionId: entry.missionId || null,
+        taskId: entry.taskId || null,
+        violationType: "stuck",
+        details,
+        severity,
+      });
+    } catch (err) {
+      console.error(`[observer] heartbeat: failed to persist stuck violation: ${err.message}`);
+    }
+
+    // Broadcast
+    broadcastEvent("agent-stuck", {
+      agentName: entry.agentName,
+      sessionId: entry.sessionId,
+      missionId: entry.missionId || null,
+      taskId: entry.taskId || null,
+      silenceSeconds: Math.round(silenceSec),
+      threshold: thresholdSec,
+      mode: observerConfig.mode,
+      ts: new Date().toISOString(),
+    });
+
+    // Auto-block mission task if assigned
+    if (entry.missionId && entry.taskId) {
+      try {
+        updateTask(entry.missionId, entry.taskId, {
+          status: "blocked",
+          blockers: [`Agent ${entry.agentName} stuck for ${Math.round(silenceSec)}s (threshold: ${thresholdSec}s)`],
+        });
+        console.log(`[observer] heartbeat: auto-blocked task ${entry.taskId} — agent ${entry.agentName} stuck`);
+      } catch (err) {
+        console.error(`[observer] heartbeat: failed to auto-block task: ${err.message}`);
+      }
+    }
+
+    console.log(`[observer] heartbeat: ${entry.agentName} stuck for ${Math.round(silenceSec)}s (threshold: ${thresholdSec}s)`);
+  }
+};
+
+/** Returns list of currently-stuck agents for the orchestrator. */
+export const getStuckAgents = () => {
+  const stuck = [];
+  for (const [key, entry] of watchers) {
+    const silenceMs = entry.engine.getSilenceMs();
+    const thresholdSec = entry.engine.getStuckThreshold();
+    if (silenceMs === null || thresholdSec === null) continue;
+
+    const silenceSec = silenceMs / 1000;
+    if (silenceSec >= thresholdSec) {
+      stuck.push({
+        agentName: entry.agentName,
+        sessionId: entry.sessionId,
+        missionId: entry.missionId || null,
+        taskId: entry.taskId || null,
+        silenceSeconds: Math.round(silenceSec),
+        threshold: thresholdSec,
+        profile: entry.profile,
+        startedAt: entry.startedAt,
+        autoBlocked: activeStuckPeriods.has(key),
+      });
+    }
+  }
+  return stuck;
 };

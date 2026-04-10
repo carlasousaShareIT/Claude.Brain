@@ -2,31 +2,29 @@
 // Processes tool call events and detects behavioral violations.
 // Stateful class, no side effects — all I/O injected by caller.
 
-import crypto from "crypto";
-
 // Default thresholds — per-violation-type
 const DEFAULT_THRESHOLDS = {
   spiral_explorer: { readCountWithoutWrite: 20 },
-  loop: { repeatCount: 5 },
-  late_output: { callsWithoutCommitOrWrite: 40 },
-  stuck: { silenceSeconds: 60 },
-  role_violation: { researcherWriteLimit: 3, builderExploreLimit: 15 },
+  stuck: { silenceSeconds: 180 },
 };
 
 // Per-profile overrides: null disables the violation for that profile
+// "" = main agent (no role assigned) — interactive, not autonomous
 const PROFILE_OVERRIDES = {
+  "": {
+    stuck: null, // main agent silence = user thinking, not stuck
+  },
   researcher: {
-    late_output: null, // researchers never trigger late_output
-    spiral_explorer: { readCountWithoutWrite: 40 }, // higher tolerance
-    role_violation: { researcherWriteLimit: 3 },
+    spiral_explorer: { readCountWithoutWrite: 40 },
+    stuck: { silenceSeconds: 120 },
   },
   builder: {
-    spiral_explorer: { readCountWithoutWrite: 10 }, // builders should write sooner
-    role_violation: { builderExploreLimit: 15 },
+    spiral_explorer: { readCountWithoutWrite: 10 },
+    stuck: { silenceSeconds: 90 },
   },
   reviewer: {
-    late_output: null,
     spiral_explorer: null, // reviewers are read-heavy by nature
+    stuck: { silenceSeconds: 120 },
   },
 };
 
@@ -40,11 +38,6 @@ const WRITE_TOOLS = new Set([
   "Write", "Edit", "Bash", "NotebookEdit",
 ]);
 const COMMIT_INDICATORS = ["git commit", "git push"];
-
-const hashInput = (toolName, input) => {
-  const str = toolName + "::" + JSON.stringify(input);
-  return crypto.createHash("md5").update(str).digest("hex");
-};
 
 export class ObserverEngine {
   constructor({ thresholds, profileOverrides, agentProfile } = {}) {
@@ -79,7 +72,6 @@ export class ObserverEngine {
     this._readCount = 0;
     this._writeCount = 0;
     this._totalCalls = 0;
-    this._callsSinceLastCommitOrWrite = 0;
     this._lastEventTime = null;
     this._startTime = null;
     this._firstWriteAt = null;
@@ -93,10 +85,7 @@ export class ObserverEngine {
     this._cacheCreationTokens = 0;
     this._outputTokens = 0;
     this._toolCallCounts = {};
-    this._inputHashes = new Map(); // hash → count
     this._violations = [];
-    this._researcherWrites = 0;
-    this._builderExplores = 0;
   }
 
   processEvent(event) {
@@ -175,18 +164,14 @@ export class ObserverEngine {
 
     if (isRead) {
       this._readCount++;
-      this._builderExplores++;
     }
 
     if (isWrite) {
       this._writeCount++;
-      this._callsSinceLastCommitOrWrite = 0;
       this._readCount = 0;
-      this._researcherWrites++;
       if (!this._firstWriteAt) this._firstWriteAt = new Date(now).toISOString();
       if (isCommit) {
         this._commitCount++;
-        this._callsSinceLastCommitOrWrite = 0;
       }
     }
 
@@ -195,7 +180,6 @@ export class ObserverEngine {
       if (/npm\s+test|jest|vitest|mocha|karma|ng\s+test/.test(input.command)) {
         this._testRunCount++;
       }
-      if (!isRead) this._builderExplores = 0;
     }
 
     // Check spiral_explorer
@@ -206,48 +190,6 @@ export class ObserverEngine {
           threshold: this._thresholds.spiral_explorer.readCountWithoutWrite,
         }));
         this._readCount = 0;
-      }
-    }
-
-    // Check loop (repeated identical calls)
-    if (this._thresholds.loop) {
-      const h = hashInput(toolName, input);
-      const count = (this._inputHashes.get(h) || 0) + 1;
-      this._inputHashes.set(h, count);
-      if (count >= this._thresholds.loop.repeatCount) {
-        violations.push(this._makeViolation("loop", {
-          tool: toolName, repeatCount: count, threshold: this._thresholds.loop.repeatCount,
-        }));
-        this._inputHashes.set(h, 0);
-      }
-    }
-
-    // Check late_output
-    if (this._thresholds.late_output && !isWrite) {
-      this._callsSinceLastCommitOrWrite++;
-      if (this._callsSinceLastCommitOrWrite >= this._thresholds.late_output.callsWithoutCommitOrWrite) {
-        violations.push(this._makeViolation("late_output", {
-          callsSinceOutput: this._callsSinceLastCommitOrWrite,
-          threshold: this._thresholds.late_output.callsWithoutCommitOrWrite,
-        }));
-        this._callsSinceLastCommitOrWrite = 0;
-      }
-    }
-
-    // Check role_violation
-    if (this._thresholds.role_violation) {
-      const role = this._agentProfile?.role || "";
-      if (role === "researcher" && this._researcherWrites > this._thresholds.role_violation.researcherWriteLimit) {
-        violations.push(this._makeViolation("role_violation", {
-          role, action: "researcher writing files", writeCount: this._researcherWrites,
-        }));
-        this._researcherWrites = 0;
-      }
-      if (role === "builder" && this._builderExplores > this._thresholds.role_violation.builderExploreLimit) {
-        violations.push(this._makeViolation("role_violation", {
-          role, action: "builder excessive exploration", exploreCount: this._builderExplores,
-        }));
-        this._builderExplores = 0;
       }
     }
 
@@ -286,6 +228,17 @@ export class ObserverEngine {
 
   getViolations() {
     return [...this._violations];
+  }
+
+  /** Returns the resolved stuck threshold in seconds, or null if disabled. */
+  getStuckThreshold() {
+    return this._thresholds.stuck?.silenceSeconds ?? null;
+  }
+
+  /** Returns ms since last event, or null if no events yet. */
+  getSilenceMs() {
+    if (!this._lastEventTime) return null;
+    return Date.now() - this._lastEventTime;
   }
 }
 
