@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Archive, Copy, ChevronDown, ChevronRight, MessageSquare, Send } from 'lucide-react'
-import { api } from '@/lib/api'
+import { Archive, Copy, ChevronDown, ChevronRight } from 'lucide-react'
 import { useBrain } from '@/hooks/use-brain'
 import { useArchived } from '@/hooks/use-archived'
 import { useProjects } from '@/hooks/use-projects'
@@ -16,7 +14,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { BrainEntry, Decision, ArchivedEntry, SectionName, Annotation } from '@/lib/types'
+import type { BrainEntry, Decision, ArchivedEntry, SectionName } from '@/lib/types'
 
 interface EntryDetailDialogProps {
   entry: BrainEntry | Decision | ArchivedEntry | null
@@ -39,20 +37,10 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
   const { setConfidence, retag } = useBrain()
   const { archive } = useArchived()
   const { data: projectList } = useProjects()
-  const queryClient = useQueryClient()
   const [copied, setCopied] = useState(false)
   const [sessionCopied, setSessionCopied] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [annotationText, setAnnotationText] = useState('')
   const [projectEditOpen, setProjectEditOpen] = useState(false)
-
-  const annotateMutation = useMutation({
-    mutationFn: api.annotate,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['brain'] })
-      setAnnotationText('')
-    },
-  })
 
   if (!entry) return null
 
@@ -61,7 +49,6 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
   const sectionLabel = SECTION_LABELS[section] ?? section
   const isDecision = 'decision' in entry && 'status' in entry
   const decision = isDecision ? (entry as Decision) : null
-  const annotations = entry.annotations ?? []
   const history = entry.history ?? []
   const confidence = entry.confidence
 
@@ -90,22 +77,6 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
     await navigator.clipboard.writeText(entry.sessionId)
     setSessionCopied(true)
     setTimeout(() => setSessionCopied(false), 2000)
-  }
-
-  const handleAddAnnotation = () => {
-    if (!annotationText.trim()) return
-    annotateMutation.mutate({
-      section: section as SectionName,
-      text,
-      note: annotationText.trim(),
-    })
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleAddAnnotation()
-    }
   }
 
   return (
@@ -273,39 +244,6 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
           </div>
         )}
 
-        {/* Annotations section. */}
-        <div className="mt-4">
-          <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[#8585a0]">
-            <MessageSquare className="size-3" />
-            Annotations ({annotations.length})
-          </div>
-          {annotations.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {annotations.map((a, i) => (
-                <AnnotationItem key={i} annotation={a} />
-              ))}
-            </div>
-          )}
-          <div className="mt-2 flex gap-1.5">
-            <input
-              type="text"
-              value={annotationText}
-              onChange={(e) => setAnnotationText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Add annotation..."
-              className="flex-1 h-7 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground placeholder:text-[#8585a0] outline-none focus:border-foreground/20 transition-colors"
-            />
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={handleAddAnnotation}
-              disabled={!annotationText.trim() || annotateMutation.isPending}
-            >
-              <Send className="size-3 text-muted-foreground" />
-            </Button>
-          </div>
-        </div>
-
         {/* Actions. */}
         <div className="mt-4 pt-3 border-t border-brain-surface flex items-center gap-2">
           <Button variant="ghost" size="xs" onClick={handleArchive}>
@@ -334,14 +272,3 @@ function MetaField({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
-function AnnotationItem({ annotation }: { annotation: Annotation }) {
-  return (
-    <div className="rounded-md bg-brain-surface/50 px-2.5 py-1.5">
-      <p className="text-xs text-foreground/80">{annotation.note}</p>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-[#8585a0]">
-        <span>{formatDate(annotation.ts)}</span>
-        {annotation.source && <span>{annotation.source}</span>}
-      </div>
-    </div>
-  )
-}

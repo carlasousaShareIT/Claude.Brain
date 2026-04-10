@@ -1,8 +1,5 @@
-import { useState, useCallback } from 'react';
-import type { SectionName } from '@/lib/types';
 import { SECTION_COLORS, SECTION_LABELS } from '@/lib/constants';
 import { timeAgo, truncate } from '@/lib/utils';
-import { useAnnotations } from '@/hooks/use-annotations';
 import { Badge } from '@/components/ui/badge';
 import type { GNode } from './use-graph';
 
@@ -14,34 +11,6 @@ interface GraphTooltipProps {
 }
 
 export function GraphTooltip({ node, position, isPinned, onClose }: GraphTooltipProps) {
-  const { data: annotationsData, annotate } = useAnnotations();
-  const [showNoteInput, setShowNoteInput] = useState(false);
-  const [noteText, setNoteText] = useState('');
-
-  const annotations = annotationsData?.find(
-    (a) => a.text === node.text && a.section === node.section,
-  )?.annotations;
-
-  const handleAddNote = useCallback(() => {
-    if (!noteText.trim()) return;
-    annotate.mutate({
-      section: node.section as SectionName,
-      text: node.text,
-      note: noteText.trim(),
-      source: 'brain-app',
-    });
-    setNoteText('');
-    setShowNoteInput(false);
-  }, [noteText, annotate, node.section, node.text]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') handleAddNote();
-      if (e.key === 'Escape') setShowNoteInput(false);
-    },
-    [handleAddNote],
-  );
-
   // Position the tooltip near the cursor but keep it within viewport.
   const left = Math.min(position.x + 12, window.innerWidth - 320);
   const top = Math.min(position.y + 12, window.innerHeight - 300);
@@ -99,50 +68,6 @@ export function GraphTooltip({ node, position, isPinned, onClose }: GraphTooltip
           >
             ✕
           </button>
-
-          {/* Annotations. */}
-          {annotations && annotations.length > 0 && (
-            <div className="mt-2 border-t border-white/5 pt-2">
-              <span className="text-[10px] font-medium text-muted-foreground">Notes</span>
-              <ul className="mt-1 space-y-1">
-                {annotations.map((a, i) => (
-                  <li key={i} className="text-xs text-foreground/80">
-                    <span className="text-muted-foreground">{timeAgo(a.ts)}</span>{' '}
-                    {a.note}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Add note. */}
-          <div className="mt-2 border-t border-white/5 pt-2">
-            {showNoteInput ? (
-              <div className="flex gap-1">
-                <input
-                  autoFocus
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Add a note..."
-                  className="flex-1 rounded border border-white/10 bg-brain-base px-2 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-white/20"
-                />
-                <button
-                  onClick={handleAddNote}
-                  className="rounded bg-white/10 px-2 py-1 text-xs text-foreground hover:bg-white/15"
-                >
-                  Add
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowNoteInput(true)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                + Add note
-              </button>
-            )}
-          </div>
         </>
       )}
     </div>

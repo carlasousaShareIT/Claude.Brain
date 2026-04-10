@@ -5,8 +5,6 @@ import { ResumeBanner } from './resume-banner'
 import { LiveActivityBar } from './live-activity-bar'
 import { MissionCard } from './mission-card'
 import { AgentsPanel } from './agents-panel'
-import { LocksPanel } from '@/components/locks/locks-panel'
-import { AgentResultsPanel } from '@/components/agents/agent-results-panel'
 import type { MissionSummary } from '@/lib/types'
 
 export function MissionsView() {
@@ -105,8 +103,6 @@ export function MissionsView() {
           )}
         </div>
 
-        <LocksPanel />
-        <AgentResultsPanel />
         <AgentsPanel />
       </div>
     </div>

@@ -7,7 +7,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { SessionTimeline } from './session-timeline'
 import { SessionHandoffSection } from './session-handoff'
-import { ScorecardWidget } from '@/components/orchestration/scorecard-widget'
 import type { SessionSummary } from '@/lib/types'
 
 interface SessionCardProps {
@@ -129,7 +128,6 @@ export function SessionCard({
 
         {isExpanded && (
           <>
-            <ScorecardWidget sessionId={session.id} />
             <SessionHandoffSection sessionId={session.id} />
             <SessionTimeline session={session} />
           </>

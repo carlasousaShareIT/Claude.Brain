@@ -33,7 +33,7 @@ export function useSSE() {
         queryClient.invalidateQueries({ queryKey: ['brain'] });
         queryClient.invalidateQueries({ queryKey: ['archived'] });
       };
-      for (const name of ['add', 'remove', 'update', 'confidence', 'archive', 'unarchive', 'annotate', 'retag']) {
+      for (const name of ['add', 'remove', 'update', 'confidence', 'archive', 'unarchive', 'retag']) {
         es.addEventListener(name, onBrainEvent);
       }
 
