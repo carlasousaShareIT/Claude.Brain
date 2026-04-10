@@ -10,6 +10,7 @@ import {
   getContextMarkdown, getTimeline,
   checkConflicts, diffEntries, retagEntry, checkHealth,
   getWebhooks,
+  recordSessionActivity,
 } from "../db-store.js";
 import { detectSection } from "../entry-utils.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
@@ -81,6 +82,12 @@ router.post("/memory", (req, res) => {
     fireWebhooks({ webhooks: getWebhooks() }, result.action, result.section, result.valText);
     broadcastEvent(result.action, { section: result.section, text: result.valText, action: result.action, source: req.body.source || "unknown", ts: new Date().toISOString() });
     console.log(`[brain] ${result.section}:${result.action} — ${JSON.stringify(result.valText).slice(0, 80)}`);
+
+    // Record brain_write activity
+    if (req.body.sessionId) {
+      try { recordSessionActivity(req.body.sessionId, "brain_write", result.section); } catch {}
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -124,6 +131,12 @@ router.post("/memory/batch", (req, res) => {
     console.log(`[brain] batch ${result.section}:${result.action} — ${JSON.stringify(result.valText).slice(0, 80)}`);
   }
 
+  // After processing all operations, record brain_write
+  const firstSessionId = operations.find(op => op.sessionId)?.sessionId;
+  if (firstSessionId) {
+    try { recordSessionActivity(firstSessionId, "brain_write", "batch"); } catch {}
+  }
+
   res.json({ ok: errors.length === 0, results, errors });
 });
 
@@ -139,6 +152,13 @@ router.get("/memory/search", (req, res) => {
   if (!q) return res.status(400).json({ error: "Missing q parameter" });
 
   const projectId = req.query.project || "";
+  const sessionId = req.query.sessionId || "";
+
+  // Record brain_query activity if sessionId provided
+  if (sessionId) {
+    try { recordSessionActivity(sessionId, "brain_query", `search: ${q}`); } catch {}
+  }
+
   res.json(searchEntries(q, projectId || undefined));
 });
 
@@ -239,6 +259,7 @@ router.get("/memory/context", (req, res) => {
   const missionId = req.query.mission || "";
   const profileId = req.query.profile || "";
   const format = req.query.format || "";
+  const sessionId = req.query.sessionId || "";
 
   const result = getContextMarkdown({
     projectId: projectId || undefined,
@@ -246,6 +267,11 @@ router.get("/memory/context", (req, res) => {
     profileId: profileId || undefined,
     format: format || undefined,
   });
+
+  // Record brain_query activity if sessionId provided
+  if (sessionId) {
+    try { recordSessionActivity(sessionId, "brain_query", "context"); } catch {}
+  }
 
   // Check for error objects returned by db-store
   if (result && typeof result === "object" && result.error) {

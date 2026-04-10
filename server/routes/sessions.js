@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, getSessionById, listSessions, getLatestHandoff, searchSessions } from "../db-store.js";
+import { startSession, endSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 import { unwatchAllForSession } from "../observer/watcher.js";
 
@@ -35,6 +35,17 @@ router.post("/:id/end", (req, res) => {
   res.json(session);
 });
 
+// PATCH /:id/handoff — update handoff data regardless of session state
+router.patch("/:id/handoff", (req, res) => {
+  const { handoff } = req.body || {};
+  if (!handoff) return res.status(400).json({ error: "Missing handoff data" });
+  const session = updateSessionHandoff(req.params.id, handoff);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  broadcastEvent("session:handoff-updated", { id: req.params.id, ts: new Date().toISOString() });
+  console.log(`[brain] session:handoff-updated ${req.params.id}`);
+  res.json(session);
+});
+
 // GET / — list sessions
 router.get("/", (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
@@ -56,6 +67,22 @@ router.get("/latest/handoff", (req, res) => {
   const result = getLatestHandoff(project);
   if (!result) return res.status(404).json({ error: "No sessions with handoff found" });
   res.json(result);
+});
+
+// GET /:id/compliance — check session compliance state for enforcement hooks
+router.get("/:id/compliance", (req, res) => {
+  const compliance = getSessionCompliance(req.params.id);
+  res.json(compliance);
+});
+
+// POST /:id/activity — record session activity (used by hooks and other tools)
+router.post("/:id/activity", (req, res) => {
+  const { type, details } = req.body;
+  if (!type) return res.status(400).json({ error: "Missing type" });
+  const validTypes = ["brain_query", "brain_write", "profile_inject", "reviewer_run", "agent_spawn", "commit"];
+  if (!validTypes.includes(type)) return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
+  recordSessionActivity(req.params.id, type, details || null);
+  res.json({ ok: true });
 });
 
 // GET /:id — single session

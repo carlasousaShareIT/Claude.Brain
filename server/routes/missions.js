@@ -31,7 +31,7 @@ const router = Router();
 
 // POST /missions — create a mission
 router.post("/", (req, res) => {
-  let { name, project, sessionId, tasks, template } = req.body;
+  let { name, project, sessionId, experimentId, tasks, template } = req.body;
 
   // If using a template, resolve it
   if (template) {
@@ -45,7 +45,7 @@ router.post("/", (req, res) => {
 
   if (!name) return res.status(400).json({ error: "Missing name" });
 
-  const mission = createMission({ name, project, sessionId, tasks });
+  const mission = createMission({ name, project, sessionId, experimentId, tasks });
   const now = new Date().toISOString();
 
   broadcastEvent("mission-created", { mission, template: template || null, ts: now });

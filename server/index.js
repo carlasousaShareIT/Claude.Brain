@@ -15,7 +15,6 @@ import { getFullBrain } from "./db-store.js";
 
 import memoryRouter from "./routes/memory.js";
 import archiveRouter from "./routes/archive.js";
-import annotationsRouter from "./routes/annotations.js";
 import metricsRouter from "./routes/metrics.js";
 import webhooksRouter from "./routes/webhooks.js";
 import projectsRouter from "./routes/projects.js";
@@ -23,10 +22,8 @@ import profilesRouter from "./routes/profiles.js";
 import missionsRouter from "./routes/missions.js";
 import remindersRouter from "./routes/reminders.js";
 import experimentsRouter from "./routes/experiments.js";
+import startupRouter from "./routes/startup.js";
 import sessionsRouter from "./routes/sessions.js";
-import locksRouter from "./routes/locks.js";
-import agentsRouter from "./routes/agents.js";
-import orchestrationRouter from "./routes/orchestration.js";
 import sseRouter from "./routes/sse.js";
 import auditRouter from "./routes/audit.js";
 import observerRouter from "./routes/observer.js";
@@ -74,7 +71,6 @@ app.get("/", (req, res) => {
 // Mount route modules
 app.use(memoryRouter);
 app.use(archiveRouter);
-app.use(annotationsRouter);
 app.use(metricsRouter);
 app.use(webhooksRouter);
 app.use(projectsRouter);
@@ -83,10 +79,8 @@ app.use(sseRouter);
 app.use("/missions", missionsRouter);
 app.use("/reminders", remindersRouter);
 app.use("/experiments", experimentsRouter);
+app.use("/sessions", startupRouter);
 app.use("/sessions", sessionsRouter);
-app.use("/locks", locksRouter);
-app.use("/agents", agentsRouter);
-app.use("/orchestration", orchestrationRouter);
 app.use("/audit", auditRouter);
 app.use("/observer", observerRouter);
 
@@ -162,9 +156,6 @@ app.listen(PORT, () => {
   console.log(`   GET  /memory/stream     — SSE live pulse`);
   console.log(`   GET  /memory/timeline   — time-travel data`);
   console.log(`   POST /memory/check      — conflict detection`);
-  console.log(`   POST /memory/annotate   — add annotation`);
-  console.log(`   DELETE /memory/annotate — remove annotation`);
-  console.log(`   GET  /memory/annotations — list annotated entries`);
   console.log(`   GET  /memory/metrics    — brain health stats`);
   console.log(`   POST /memory/webhooks   — register webhook`);
   console.log(`   DELETE /memory/webhooks — remove webhook`);
@@ -194,10 +185,13 @@ app.listen(PORT, () => {
   console.log(`   PATCH /experiments/:id           — update/conclude experiment`);
   console.log(`   POST /experiments/:id/observations — record observation`);
   console.log(`   DELETE /experiments/:id          — delete experiment`);
+  console.log(`   POST /sessions/startup       — compound startup (register + context + handoff + missions + reminders)`);
   console.log(`   POST /sessions/start         — start a session`);
   console.log(`   POST /sessions/:id/end       — end a session with handoff`);
   console.log(`   GET  /sessions               — list sessions`);
   console.log(`   GET  /sessions/latest/handoff — latest handoff summary`);
+  console.log(`   GET  /sessions/:id/compliance — session compliance checks`);
+  console.log(`   POST /sessions/:id/activity  — record session activity`);
   console.log(`   GET  /sessions/:id           — single session`);
   console.log(`   GET  /audit/reports          — list audit reports`);
   console.log(`   GET  /audit/reports/latest   — latest audit report`);
