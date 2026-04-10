@@ -1,9 +1,9 @@
 // brain-audit.js — brain health audit system
 
-import { tokenize, similarity, slugify } from "./text-utils.js";
+import { tokenize, similarity, slugify, combinedSimilarity, semanticNormalize } from "./text-utils.js";
 import { getDb } from "./db.js";
 import { broadcastEvent } from "./broadcast.js";
-import { addEntry, updateEntry, updateDecision, archiveEntry, resolveDecision } from "./db-store.js";
+import { addEntry, updateEntry, updateDecision, archiveEntry, resolveDecision, isEntryReferencedByMission } from "./db-store.js";
 
 const now = () => new Date().toISOString();
 
@@ -28,12 +28,11 @@ function findDuplicates() {
   const seen = new Set();
 
   for (let i = 0; i < all.length; i++) {
-    const tokA = tokenize(all[i].text);
     for (let j = i + 1; j < all.length; j++) {
-      const tokB = tokenize(all[j].text);
-      const sim = similarity(tokA, tokB);
-      if (sim >= 0.6) {
-        const pairKey = `${all[i].id}-${all[j].id}`;
+      const sim = combinedSimilarity(all[i].text, all[j].text);
+      const pairKey = `${all[i].id}-${all[j].id}`;
+
+      if (sim >= 0.45) {
         if (seen.has(pairKey)) continue;
         seen.add(pairKey);
 
@@ -50,6 +49,30 @@ function findDuplicates() {
           relatedText: all[j].text,
           similarity: Math.round(sim * 100) / 100,
         });
+      } else {
+        // Substring detection for entries that share content but have low token similarity
+        const normA = semanticNormalize(all[i].text);
+        const normB = semanticNormalize(all[j].text);
+        const isSubstring = normA.length > 20 && normB.length > 20 &&
+          (normA.includes(normB) || normB.includes(normA));
+        if (isSubstring) {
+          if (seen.has(pairKey)) continue;
+          seen.add(pairKey);
+
+          findings.push({
+            id: `duplicate-${all[i].id}-${all[j].id}`,
+            type: "duplicate",
+            severity: "warning",
+            section: all[i].section,
+            entryId: all[i].id,
+            text: all[i].text,
+            detail: `Substring duplicate of (${all[j].section}): ${all[j].text}`,
+            relatedEntryId: all[j].id,
+            relatedSection: all[j].section,
+            relatedText: all[j].text,
+            similarity: 0.5,
+          });
+        }
       }
     }
   }
@@ -218,6 +241,58 @@ export function runBrainAudit(trigger = "scheduled") {
 
   const findings = [...duplicates, ...stale, ...noise, ...promotable, ...agingDecisions];
 
+  // Auto-actions: archive stale, promote decisions, merge duplicates
+  const autoActions = [];
+
+  // Auto-archive stale tentative entries older than 30 days
+  for (const finding of [...stale, ...noise]) {
+    if (finding.type === "stale" && finding.ageDays >= 30) {
+      if (!isEntryReferencedByMission(finding.text)) {
+        archiveEntry(finding.section, finding.text);
+        autoActions.push({ type: "auto-archive", entryId: finding.entryId, reason: `Stale tentative entry (${finding.ageDays} days)` });
+      }
+    }
+    if (finding.type === "noise" && finding.detail.includes("single-session tentative entry older than 30 days")) {
+      if (!isEntryReferencedByMission(finding.text)) {
+        archiveEntry(finding.section, finding.text);
+        autoActions.push({ type: "auto-archive", entryId: finding.entryId, reason: "Single-session noise entry" });
+      }
+    }
+  }
+
+  // Auto-promote firm resolved decisions older than 14 days
+  for (const finding of promotable) {
+    const db2 = getDb();
+    const decision = db2.prepare("SELECT * FROM decisions WHERE id = ?").get(finding.entryId);
+    if (decision && daysBetween(decision.created_at) >= 14) {
+      const result = promoteDecisionToArchitecture(finding.entryId);
+      if (result.ok) {
+        autoActions.push({ type: "auto-promote", entryId: finding.entryId, reason: "Firm resolved decision aged 14+ days" });
+      }
+    }
+  }
+
+  // Auto-merge high-confidence duplicates
+  for (const finding of duplicates) {
+    if (finding.similarity >= 0.8) {
+      const keepText = finding.text.length >= finding.relatedText.length ? finding.text : finding.relatedText;
+      const keepSection = finding.text.length >= finding.relatedText.length ? finding.section : finding.relatedSection;
+      const archiveText = keepText === finding.text ? finding.relatedText : finding.text;
+      const archiveSection = keepText === finding.text ? finding.relatedSection : finding.section;
+      const result = mergeDuplicateEntries(keepSection, keepText, archiveSection, archiveText);
+      if (result.ok) {
+        autoActions.push({ type: "auto-merge", entryId: finding.entryId, reason: `Duplicate similarity ${finding.similarity}` });
+      }
+    }
+  }
+
+  // Log auto-actions to activity_log
+  for (const action of autoActions) {
+    db.prepare(
+      "INSERT INTO activity_log (timestamp, action, section, source, session_id, value_summary) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(ts, action.type, "brain", "brain-audit-auto", null, `${action.type}: ${action.reason}`);
+  }
+
   // Carry forward dismissed findings from latest report
   let dismissed = [];
   const latestRow = db.prepare("SELECT dismissed FROM audit_reports ORDER BY created_at DESC LIMIT 1").get();
@@ -237,6 +312,8 @@ export function runBrainAudit(trigger = "scheduled") {
     promotable: promotable.length,
     agingDecisions: agingDecisions.length,
     total: findings.length,
+    autoActions: autoActions.length,
+    autoActionDetails: autoActions,
   };
 
   // Persist report
@@ -280,9 +357,10 @@ export function runBrainAudit(trigger = "scheduled") {
     summary,
     findings,
     dismissed,
+    autoActions,
   };
 
-  console.log(`[brain-audit] completed (${trigger}): ${summary.total} findings`);
+  console.log(`[brain-audit] completed (${trigger}): ${summary.total} findings, ${autoActions.length} auto-actions`);
   return report;
 }
 
@@ -389,14 +467,13 @@ let lastRunDate = null;
 let auditIntervalId = null;
 
 export function startAuditSchedule() {
-  console.log("[brain-audit] weekly schedule started (Fridays at 9:00)");
+  console.log("[brain-audit] daily schedule started (2:00 AM)");
   auditIntervalId = setInterval(() => {
     const d = new Date();
-    const dayOfWeek = d.getDay(); // 5 = Friday
     const hour = d.getHours();
     const dateStr = d.toISOString().slice(0, 10);
 
-    if (dayOfWeek === 5 && hour === 9 && lastRunDate !== dateStr) {
+    if (hour === 2 && lastRunDate !== dateStr) {
       lastRunDate = dateStr;
       console.log(`[brain-audit] scheduled audit triggered on ${dateStr}`);
       runBrainAudit("scheduled");

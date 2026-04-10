@@ -30,6 +30,35 @@ export const similarity = (tokensA, tokensB) => {
   return shared / Math.sqrt(setA.size * setB.size);
 };
 
+// Bigram tokenization for improved similarity matching
+export const bigramTokenize = (text) => {
+  const words = tokenize(text);
+  if (words.length < 2) return words;
+  const bigrams = [];
+  for (let i = 0; i < words.length - 1; i++) {
+    bigrams.push(`${words[i]}_${words[i + 1]}`);
+  }
+  return bigrams;
+};
+
+const COMMON_PREFIXES = /^(always|never|use|don't|do not|ensure|make sure|remember to|avoid|prefer|when|if|for)\s+/i;
+
+export const semanticNormalize = (text) => {
+  return text.replace(COMMON_PREFIXES, "").trim();
+};
+
+export const combinedSimilarity = (textA, textB) => {
+  const normA = semanticNormalize(textA);
+  const normB = semanticNormalize(textB);
+  const uniA = tokenize(normA);
+  const uniB = tokenize(normB);
+  const biA = bigramTokenize(normA);
+  const biB = bigramTokenize(normB);
+  const uniSim = similarity(uniA, uniB);
+  const biSim = biA.length > 0 && biB.length > 0 ? similarity(biA, biB) : uniSim;
+  return 0.6 * uniSim + 0.4 * biSim;
+};
+
 // Slugify a name into a URL/CLI-friendly ID with collision handling
 export const slugify = (text, prefix, existingIds) => {
   const base = text
