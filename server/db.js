@@ -532,6 +532,35 @@ const createSchema = (db) => {
     console.log("[brain-db] schema version updated to 1.8.0");
   }
 
+  // Schema migration: add experiment_id to missions (v1.9.0)
+  const missionCols190 = db.prepare("PRAGMA table_info(missions)").all().map(c => c.name);
+  if (!missionCols190.includes("experiment_id")) {
+    db.exec("ALTER TABLE missions ADD COLUMN experiment_id TEXT");
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "1.9.0");
+    console.log("[brain-db] schema version updated to 1.9.0 — missions.experiment_id");
+  }
+
+  // Schema migration: add session_activity table (v2.0.0)
+  const sessionActivityExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='session_activity'").get();
+  if (!sessionActivityExists) {
+    db.exec(`
+      CREATE TABLE session_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        activity_type TEXT NOT NULL CHECK (activity_type IN (
+          'brain_query', 'brain_write', 'profile_inject', 'reviewer_run',
+          'agent_spawn', 'commit'
+        )),
+        details TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_session_activity_session ON session_activity(session_id);
+      CREATE INDEX idx_session_activity_type ON session_activity(activity_type);
+    `);
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "2.0.0");
+    console.log("[brain-db] migrated: added session_activity table (v2.0.0)");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

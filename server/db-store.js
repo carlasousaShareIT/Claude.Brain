@@ -53,6 +53,7 @@ const rowToMission = (row) => ({
   name: row.name,
   project: row.project || null,
   status: row.status || "active",
+  experimentId: row.experiment_id || null,
   createdAt: row.created_at || null,
   createdInSession: row.session_id || null,
   completedAt: row.completed_at || null,
@@ -76,27 +77,6 @@ const rowToTask = (row) => ({
   completedAt: row.completed_at || null,
 });
 
-const rowToLock = (row) => ({
-  id: row.id,
-  file: row.file,
-  agent: row.agent,
-  sessionId: row.session_id || null,
-  claimedAt: row.claimed_at || null,
-  expiresAt: row.expires_at || null,
-});
-
-const rowToAgentResult = (row) => ({
-  id: row.id,
-  agent: row.agent,
-  sessionId: row.session_id || null,
-  missionId: row.mission_id || null,
-  taskId: row.task_id || null,
-  branch: row.branch || null,
-  worktreePath: row.worktree_path || null,
-  changedFiles: parseJson(row.changed_files, []),
-  summary: row.summary,
-  createdAt: row.created_at || null,
-});
 
 const rowToReminder = (row) => ({
   id: row.id,
@@ -494,7 +474,7 @@ export const searchEntries = (query, projectId) => {
 // Missions
 // ---------------------------------------------------------------------------
 
-export const createMission = ({ name, project, sessionId, tasks }) => {
+export const createMission = ({ name, project, sessionId, experimentId, tasks }) => {
   const db = getDb();
   const ts = now();
 
@@ -504,8 +484,8 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
   const existingTaskIds = new Set(db.prepare("SELECT id FROM mission_tasks").all().map(r => r.id));
 
   const insertMission = db.prepare(`
-    INSERT INTO missions (id, name, project, status, session_id, created_at)
-    VALUES (?, ?, ?, 'active', ?, ?)
+    INSERT INTO missions (id, name, project, status, session_id, experiment_id, created_at)
+    VALUES (?, ?, ?, 'active', ?, ?, ?)
   `);
 
   const insertTask = db.prepare(`
@@ -515,7 +495,7 @@ export const createMission = ({ name, project, sessionId, tasks }) => {
 
   const missionTasks = [];
   const doCreate = db.transaction(() => {
-    insertMission.run(missionId, name, project || null, sessionId || null, ts);
+    insertMission.run(missionId, name, project || null, sessionId || null, experimentId || null, ts);
     for (const t of (tasks || [])) {
       const taskId = slugify(t.description, "t", existingTaskIds);
       existingTaskIds.add(taskId);
@@ -1517,73 +1497,17 @@ export const unarchiveEntry = (text) => {
 // Annotations
 // ---------------------------------------------------------------------------
 
-export const addAnnotation = (section, text, { note, source, sessionId }) => {
+// ---------------------------------------------------------------------------
+// Mission reference check
+// ---------------------------------------------------------------------------
+
+export const isEntryReferencedByMission = (text) => {
   const db = getDb();
-  const ts = now();
-  const annotation = { note, ts, source: source || "unknown", sessionId: sessionId || null };
-
-  if (section === "decisions") {
-    const row = db.prepare("SELECT * FROM decisions WHERE decision = ?").get(text);
-    if (!row) return false;
-    const annotations = parseJson(row.annotations, []);
-    annotations.push(annotation);
-    db.prepare("UPDATE decisions SET annotations = ? WHERE id = ?").run(jsonStr(annotations), row.id);
-    return true;
-  }
-
-  const row = db.prepare("SELECT * FROM entries WHERE section = ? AND text = ?").get(section, text);
-  if (!row) return false;
-  const annotations = parseJson(row.annotations, []);
-  annotations.push(annotation);
-  db.prepare("UPDATE entries SET annotations = ? WHERE id = ?").run(jsonStr(annotations), row.id);
-  return true;
-};
-
-export const removeAnnotation = (section, text, note) => {
-  const db = getDb();
-
-  if (section === "decisions") {
-    const row = db.prepare("SELECT * FROM decisions WHERE decision = ?").get(text);
-    if (!row) return false;
-    const annotations = parseJson(row.annotations, []);
-    const before = annotations.length;
-    const filtered = annotations.filter(a => a.note !== note);
-    if (filtered.length === before) return false;
-    db.prepare("UPDATE decisions SET annotations = ? WHERE id = ?").run(jsonStr(filtered), row.id);
-    return true;
-  }
-
-  const row = db.prepare("SELECT * FROM entries WHERE section = ? AND text = ?").get(section, text);
-  if (!row) return false;
-  const annotations = parseJson(row.annotations, []);
-  const before = annotations.length;
-  const filtered = annotations.filter(a => a.note !== note);
-  if (filtered.length === before) return false;
-  db.prepare("UPDATE entries SET annotations = ? WHERE id = ?").run(jsonStr(filtered), row.id);
-  return true;
-};
-
-export const getAnnotatedEntries = () => {
-  const db = getDb();
-  const results = [];
-
-  const entryRows = db.prepare("SELECT * FROM entries WHERE annotations != '[]'").all();
-  for (const row of entryRows) {
-    const annotations = parseJson(row.annotations, []);
-    if (annotations.length > 0) {
-      results.push({ section: row.section, text: row.text, annotations });
-    }
-  }
-
-  const decisionRows = db.prepare("SELECT * FROM decisions WHERE annotations != '[]'").all();
-  for (const row of decisionRows) {
-    const annotations = parseJson(row.annotations, []);
-    if (annotations.length > 0) {
-      results.push({ section: "decisions", text: row.decision, annotations });
-    }
-  }
-
-  return results;
+  const normalizedText = text.substring(0, 100); // use first 100 chars for LIKE match
+  const result = db.prepare(
+    "SELECT 1 FROM mission_tasks mt JOIN missions m ON mt.mission_id = m.id WHERE m.status = 'active' AND (mt.description LIKE ? OR mt.output LIKE ?) LIMIT 1"
+  ).get(`%${normalizedText}%`, `%${normalizedText}%`);
+  return !!result;
 };
 
 // ---------------------------------------------------------------------------
@@ -1689,17 +1613,30 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
     });
   };
 
+  const daysSince = (dateStr) => {
+    if (!dateStr) return 999;
+    return Math.max(0, (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+  };
+  const decayScore = (entry) => {
+    if (entry.confidence === "firm") return 1.0;
+    const days = daysSince(entry.lastTouched || entry.createdAt);
+    return Math.max(0.1, 1.0 - days / 60);
+  };
+
   const sortByConfidence = (entries) => [...entries].sort((a, b) => {
-    const ca = a.confidence === "firm" ? 0 : 1;
-    const cb = b.confidence === "firm" ? 0 : 1;
-    return ca - cb;
+    return decayScore(b) - decayScore(a);
   });
 
   const formatEntry = (e, textField = "text") => {
     const t = e[textField] || "";
-    if (compact) return `- ${t}`;
-    const conf = e.confidence ? ` [${e.confidence}]` : "";
-    return `- ${t}${conf}`;
+    const score = decayScore(e);
+    if (compact) {
+      if (e.confidence === "firm") return `- ${t}`;
+      if (score >= 0.3) return `- ${t}`;
+      return `- [fading] ${t}`;
+    }
+    const tag = e.confidence === "firm" ? "firm" : (score < 0.3 ? "fading" : "tentative");
+    return `- ${t} [${tag}]`;
   };
 
   const lines = [];
@@ -2382,6 +2319,17 @@ export const getLatestHandoff = (project) => {
   return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
 };
 
+export const updateSessionHandoff = (id, handoff) => {
+  const db = getDb();
+  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  if (!session) return null;
+  db.prepare("UPDATE sessions SET handoff = ? WHERE id = ?").run(
+    handoff ? JSON.stringify(handoff) : null, id
+  );
+  const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
+  return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
+};
+
 export const searchSessions = (query, project) => {
   const db = getDb();
   const q = `%${query}%`;
@@ -2393,6 +2341,46 @@ export const searchSessions = (query, project) => {
     ...row,
     handoff: row.handoff ? JSON.parse(row.handoff) : null,
   }));
+};
+
+// ---------------------------------------------------------------------------
+// Session activity tracking
+// ---------------------------------------------------------------------------
+
+export const recordSessionActivity = (sessionId, type, details = null) => {
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO session_activity (session_id, activity_type, details, created_at) VALUES (?, ?, ?, datetime('now'))"
+  ).run(sessionId, type, details);
+};
+
+export const getSessionCompliance = (sessionId) => {
+  const db = getDb();
+  const activities = db.prepare(
+    "SELECT activity_type, details FROM session_activity WHERE session_id = ?"
+  ).all(sessionId);
+
+  const brainQueried = activities.some(a => a.activity_type === "brain_query");
+  const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
+  const profilesInjected = activities
+    .filter(a => a.activity_type === "profile_inject")
+    .map(a => a.details)
+    .filter(Boolean);
+  const commitCount = activities.filter(a => a.activity_type === "commit").length;
+  const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
+
+  return {
+    brainQueried,
+    reviewerRan,
+    profilesInjected: [...new Set(profilesInjected)],
+    commitCount,
+    agentSpawnCount,
+    checks: {
+      brain_query_gate: brainQueried ? "pass" : "fail",
+      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
+      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
+    },
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -2477,13 +2465,11 @@ export const autoObserveOnMissionComplete = (missionId) => {
   const mission = db.prepare("SELECT * FROM missions WHERE id = ?").get(missionId);
   if (!mission) return [];
 
-  // Find active experiments whose project overlaps with this mission's project
-  const activeExps = db.prepare("SELECT * FROM experiments WHERE status = 'active'").all();
-  const missionProject = mission.project || "general";
-  const matchingExps = activeExps.filter(e => {
-    const expProjects = parseJson(e.project, ["general"]);
-    return expProjects.includes(missionProject) || expProjects.includes("general");
-  });
+  // Only auto-observe when the mission is explicitly linked to an experiment
+  if (!mission.experiment_id) return [];
+
+  const exp = db.prepare("SELECT * FROM experiments WHERE id = ? AND status = 'active'").get(mission.experiment_id);
+  const matchingExps = exp ? [exp] : [];
 
   if (matchingExps.length === 0) return [];
 
@@ -2596,122 +2582,6 @@ export const getNextTasks = (missionId) => {
 };
 
 // ---------------------------------------------------------------------------
-// File locks
-// ---------------------------------------------------------------------------
-
-const LOCK_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
-const cleanExpiredLocks = () => {
-  const db = getDb();
-  const expired = db.prepare("DELETE FROM locks WHERE expires_at < ?").run(now());
-  return expired.changes;
-};
-
-export const claimLocks = (files, agent, sessionId) => {
-  const db = getDb();
-  cleanExpiredLocks();
-
-  const conflicts = [];
-  for (const file of files) {
-    const existing = db.prepare("SELECT * FROM locks WHERE file = ? AND agent != ? AND expires_at >= ?").get(file, agent, now());
-    if (existing) conflicts.push(rowToLock(existing));
-  }
-  if (conflicts.length > 0) return { ok: false, conflicts };
-
-  const ts = now();
-  const expiresAt = new Date(Date.now() + LOCK_TTL_MS).toISOString();
-  const locks = [];
-
-  const doTx = db.transaction(() => {
-    for (const file of files) {
-      // Same agent re-claiming: refresh expiry
-      const existing = db.prepare("SELECT * FROM locks WHERE file = ? AND agent = ?").get(file, agent);
-      if (existing) {
-        db.prepare("UPDATE locks SET expires_at = ?, session_id = ?, claimed_at = ? WHERE id = ?").run(expiresAt, sessionId || existing.session_id, ts, existing.id);
-        locks.push({ id: existing.id, file, agent, sessionId: sessionId || existing.session_id, claimedAt: ts, expiresAt });
-      } else {
-        const result = db.prepare("INSERT INTO locks (file, agent, session_id, claimed_at, expires_at) VALUES (?, ?, ?, ?, ?)").run(file, agent, sessionId || null, ts, expiresAt);
-        locks.push({ id: result.lastInsertRowid, file, agent, sessionId: sessionId || null, claimedAt: ts, expiresAt });
-      }
-    }
-  });
-  doTx();
-
-  return { ok: true, locks };
-};
-
-export const releaseLocks = ({ files, agent }) => {
-  const db = getDb();
-  let sql = "DELETE FROM locks WHERE 1=1";
-  const params = [];
-  if (files && files.length > 0) {
-    sql += ` AND file IN (${files.map(() => "?").join(", ")})`;
-    params.push(...files);
-  }
-  if (agent) { sql += " AND agent = ?"; params.push(agent); }
-  const result = db.prepare(sql).run(...params);
-  return { released: result.changes };
-};
-
-export const getLocks = ({ agent, file } = {}) => {
-  const db = getDb();
-  cleanExpiredLocks();
-  let sql = "SELECT * FROM locks WHERE 1=1";
-  const params = [];
-  if (agent) { sql += " AND agent = ?"; params.push(agent); }
-  if (file) { sql += " AND file = ?"; params.push(file); }
-  sql += " ORDER BY claimed_at DESC";
-  return db.prepare(sql).all(...params).map(rowToLock);
-};
-
-export const forceReleaseLock = (id) => {
-  const db = getDb();
-  const result = db.prepare("DELETE FROM locks WHERE id = ?").run(id);
-  return result.changes > 0;
-};
-
-// ---------------------------------------------------------------------------
-// Agent output registry
-// ---------------------------------------------------------------------------
-
-export const createAgentResult = ({ agent, sessionId, missionId, taskId, branch, worktreePath, changedFiles, summary }) => {
-  const db = getDb();
-  const ts = now();
-  const existingIds = new Set(db.prepare("SELECT id FROM agent_results").all().map(r => r.id));
-  const id = slugify(agent + " " + summary, "ar", existingIds);
-
-  db.prepare(`
-    INSERT INTO agent_results (id, agent, session_id, mission_id, task_id, branch, worktree_path, changed_files, summary, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, agent, sessionId || null, missionId || null, taskId || null, branch || null, worktreePath || null, jsonStr(changedFiles || []), summary, ts);
-
-  return { id, agent, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, branch: branch || null, worktreePath: worktreePath || null, changedFiles: changedFiles || [], summary, createdAt: ts };
-};
-
-export const getAgentResults = ({ sessionId, agent, missionId } = {}) => {
-  const db = getDb();
-  let sql = "SELECT * FROM agent_results WHERE 1=1";
-  const params = [];
-  if (sessionId) { sql += " AND session_id = ?"; params.push(sessionId); }
-  if (agent) { sql += " AND agent = ?"; params.push(agent); }
-  if (missionId) { sql += " AND mission_id = ?"; params.push(missionId); }
-  sql += " ORDER BY created_at DESC";
-  return db.prepare(sql).all(...params).map(rowToAgentResult);
-};
-
-export const getAgentResult = (id) => {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM agent_results WHERE id = ?").get(id);
-  return row ? rowToAgentResult(row) : null;
-};
-
-export const deleteAgentResult = (id) => {
-  const db = getDb();
-  const result = db.prepare("DELETE FROM agent_results WHERE id = ?").run(id);
-  return result.changes > 0;
-};
-
-// ---------------------------------------------------------------------------
 // Observer violations
 // ---------------------------------------------------------------------------
 
@@ -2748,6 +2618,16 @@ export const listViolations = ({ sessionId, agentName, missionId, type, limit } 
   sql += " ORDER BY created_at DESC";
   if (limit) { sql += " LIMIT ?"; params.push(limit); }
   return db.prepare(sql).all(...params).map(rowToViolation);
+};
+
+export const clearViolations = ({ type, before } = {}) => {
+  const db = getDb();
+  let sql = "DELETE FROM observer_violations WHERE 1=1";
+  const params = [];
+  if (type) { sql += " AND violation_type = ?"; params.push(type); }
+  if (before) { sql += " AND created_at < ?"; params.push(before); }
+  const result = db.prepare(sql).run(...params);
+  return { deleted: result.changes };
 };
 
 export const getViolationRateByAgent = () => {
@@ -2801,12 +2681,6 @@ export const createAgentMetrics = ({ agentName, sessionId, missionId, taskId, to
   }
 
   return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: violationCount || 0, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
-};
-
-export const getMetricsByTask = (taskId) => {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM agent_metrics WHERE task_id = ?").get(taskId);
-  return row ? rowToAgentMetrics(row) : null;
 };
 
 export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}) => {
