@@ -14,6 +14,8 @@ import type {
   SectionName,
   SessionSummary,
   SessionLifecycle,
+  SessionHealthOverview,
+  SessionHealthDetail,
   HealthReport,
   AgentSummary,
   ContextProfile,
@@ -106,6 +108,12 @@ export const api = {
 
   listSessionLifecycles: (params?: { limit?: number; project?: string }) =>
     apiFetch<SessionLifecycle[]>(`/sessions${qs({ limit: params?.limit?.toString(), project: params?.project })}`),
+
+  getSessionsHealth: (limit?: number) =>
+    apiFetch<SessionHealthOverview>(`/sessions/health${qs({ limit: limit?.toString() })}`),
+
+  getSessionHealth: (id: string) =>
+    apiFetch<SessionHealthDetail>(`/sessions/${id}/health`),
 
   getLog: () => apiFetch<LogEntry[]>('/memory/log'),
 
@@ -345,8 +353,8 @@ export const api = {
     apiFetch<ObserverConfig>('/observer/config', { method: 'PATCH', body: config as unknown as BodyInit }),
 
   // Agent metrics
-  getAgentMetricsSummary: () =>
-    apiFetch<AgentMetricsSummary[]>('/agents/metrics/summary'),
+  getAgentMetricsSummary: (params?: { agent?: string }) =>
+    apiFetch<AgentMetricsSummary[]>(`/observer/metrics/summary${qs({ agent: params?.agent })}`),
 
   // Mission task retry
   retryTask: (missionId: string, taskId: string) =>

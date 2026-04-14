@@ -2383,6 +2383,160 @@ export const getSessionCompliance = (sessionId) => {
   };
 };
 
+export const getSessionsHealth = (limit = 20) => {
+  const db = getDb();
+  const totalSessions = db.prepare("SELECT COUNT(*) AS cnt FROM sessions").get().cnt;
+  const sessions = db.prepare(
+    "SELECT id, label, started_at FROM sessions ORDER BY started_at DESC LIMIT ?"
+  ).all(limit);
+  const analyzedSessions = sessions.length;
+
+  const rates = {
+    brain_query: { passed: 0, total: 0 },
+    agent_profile: { passed: 0, total: 0 },
+    reviewer: { passed: 0, total: 0 },
+  };
+  const trend = [];
+
+  for (const s of sessions) {
+    const activities = db.prepare(
+      "SELECT activity_type, details FROM session_activity WHERE session_id = ?"
+    ).all(s.id);
+
+    const brainQueried = activities.some(a => a.activity_type === "brain_query");
+    const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
+    const profilesInjected = activities.filter(a => a.activity_type === "profile_inject");
+    const commitCount = activities.filter(a => a.activity_type === "commit").length;
+    const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
+
+    const gates = {
+      brain_query_gate: brainQueried ? "pass" : "fail",
+      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
+      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
+    };
+
+    // Accumulate rates
+    rates.brain_query.total++;
+    if (gates.brain_query_gate === "pass") rates.brain_query.passed++;
+
+    rates.agent_profile.total++;
+    if (gates.agent_profile_gate === "pass") rates.agent_profile.passed++;
+
+    if (gates.reviewer_gate !== "not_applicable") {
+      rates.reviewer.total++;
+      if (gates.reviewer_gate === "pass") rates.reviewer.passed++;
+    }
+
+    // Score: pass count / applicable count
+    const applicable = Object.values(gates).filter(v => v !== "not_applicable");
+    const passCount = applicable.filter(v => v === "pass").length;
+    const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+
+    trend.push({
+      sessionId: s.id,
+      label: s.label || null,
+      date: s.started_at ? s.started_at.slice(0, 10) : null,
+      score,
+      gates,
+    });
+  }
+
+  // Compute rate ratios
+  for (const key of Object.keys(rates)) {
+    rates[key].rate = rates[key].total > 0
+      ? Math.round((rates[key].passed / rates[key].total) * 100) / 100
+      : 0;
+  }
+
+  // Worst gate
+  const applicableRates = Object.entries(rates).filter(([, v]) => v.total > 0);
+  let worstGate = null;
+  if (applicableRates.length > 0) {
+    worstGate = applicableRates.reduce((worst, [key, v]) =>
+      v.rate < worst[1].rate ? [key, v] : worst
+    )[0];
+  }
+
+  // Average activities per session
+  const totalActivities = db.prepare(
+    "SELECT COUNT(*) AS cnt FROM session_activity WHERE session_id IN (SELECT id FROM sessions ORDER BY started_at DESC LIMIT ?)"
+  ).get(limit).cnt;
+  const averageActivitiesPerSession = analyzedSessions > 0
+    ? Math.round((totalActivities / analyzedSessions) * 100) / 100
+    : 0;
+
+  // Trend oldest-first
+  trend.reverse();
+
+  return {
+    totalSessions,
+    analyzedSessions,
+    rates,
+    worstGate,
+    trend,
+    averageActivitiesPerSession,
+  };
+};
+
+export const getSessionHealth = (sessionId) => {
+  const db = getDb();
+  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
+  if (!session) return null;
+
+  const activities = db.prepare(
+    "SELECT activity_type, details, created_at FROM session_activity WHERE session_id = ? ORDER BY created_at ASC"
+  ).all(sessionId);
+
+  const brainQueried = activities.some(a => a.activity_type === "brain_query");
+  const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
+  const profilesInjected = activities.filter(a => a.activity_type === "profile_inject");
+  const commitCount = activities.filter(a => a.activity_type === "commit").length;
+  const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
+
+  const gates = {
+    brain_query_gate: brainQueried ? "pass" : "fail",
+    agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
+    reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
+  };
+
+  const activityCounts = {
+    brain_query: 0, brain_write: 0, profile_inject: 0,
+    reviewer_run: 0, agent_spawn: 0, commit: 0,
+  };
+  for (const a of activities) {
+    if (a.activity_type in activityCounts) activityCounts[a.activity_type]++;
+  }
+
+  const applicable = Object.values(gates).filter(v => v !== "not_applicable");
+  const passCount = applicable.filter(v => v === "pass").length;
+  const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+
+  const timeline = activities.map(a => ({
+    type: a.activity_type,
+    details: a.details || null,
+    timestamp: a.created_at,
+  }));
+
+  const gaps = [];
+  if (gates.brain_query_gate === "fail") gaps.push("No brain query performed");
+  if (gates.agent_profile_gate === "fail") gaps.push(`No brain context injected into agent prompts (${agentSpawnCount} agent${agentSpawnCount === 1 ? "" : "s"} spawned)`);
+  if (gates.reviewer_gate === "fail") gaps.push(`No reviewer run before commit (${commitCount} commit${commitCount === 1 ? "" : "s"})`);
+
+  return {
+    sessionId: session.id,
+    label: session.label || null,
+    project: session.project || null,
+    started_at: session.started_at || null,
+    ended_at: session.ended_at || null,
+    score,
+    gates,
+    activityCounts,
+    totalActivities: activities.length,
+    timeline,
+    gaps,
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Mission templates (reusable blueprints)
 // ---------------------------------------------------------------------------
@@ -2680,7 +2834,19 @@ export const createAgentMetrics = ({ agentName, sessionId, missionId, taskId, to
     `).run(id, agentName, sessionId || null, missionId || null, taskId || null, JSON.stringify(toolCalls || {}), totalCalls || 0, firstWriteAt || null, commitCount || 0, testRunCount || 0, testPassCount || 0, testFailCount || 0, violationCount || 0, durationMs || 0, inputTokens || 0, outputTokens || 0, ts);
   }
 
-  return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: violationCount || 0, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
+  // Re-derive violation_count from actual violations table to ensure consistency
+  db.prepare(`
+    UPDATE agent_metrics SET violation_count = (
+      SELECT COUNT(*) FROM observer_violations
+      WHERE session_id IS ? AND agent_name = ?
+    ) WHERE id = ?
+  `).run(sessionId || null, agentName, id);
+
+  // Read back the derived count for the return value
+  const derivedRow = db.prepare("SELECT violation_count FROM agent_metrics WHERE id = ?").get(id);
+  const derivedViolationCount = derivedRow ? derivedRow.violation_count : (violationCount || 0);
+
+  return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: derivedViolationCount, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
 };
 
 export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}) => {

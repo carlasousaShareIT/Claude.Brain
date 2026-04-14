@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity } from "../db-store.js";
+import { startSession, endSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 import { unwatchAllForSession } from "../observer/watcher.js";
 
@@ -66,6 +66,19 @@ router.get("/latest/handoff", (req, res) => {
   const project = req.query.project || undefined;
   const result = getLatestHandoff(project);
   if (!result) return res.status(404).json({ error: "No sessions with handoff found" });
+  res.json(result);
+});
+
+// GET /health — aggregate health across recent sessions
+router.get("/health", (req, res) => {
+  const limit = parseInt(req.query.limit) || 20;
+  res.json(getSessionsHealth(limit));
+});
+
+// GET /:id/health — single session health detail
+router.get("/:id/health", (req, res) => {
+  const result = getSessionHealth(req.params.id);
+  if (!result) return res.status(404).json({ error: "Session not found" });
   res.json(result);
 });
 

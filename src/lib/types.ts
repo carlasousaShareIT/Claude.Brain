@@ -420,3 +420,45 @@ export interface VerificationResult {
   output: string
   verifiedAt: string
 }
+
+// Session health
+export interface GateRate {
+  passed: number
+  total: number
+  rate: number // 0-1
+}
+
+export interface SessionHealthTrend {
+  sessionId: string
+  label: string | null
+  date: string
+  score: number // 0-1
+  gates: Record<string, 'pass' | 'fail' | 'not_applicable'>
+}
+
+export interface SessionHealthOverview {
+  totalSessions: number
+  analyzedSessions: number
+  rates: {
+    brain_query: GateRate
+    agent_profile: GateRate
+    reviewer: GateRate
+  }
+  worstGate: string | null
+  trend: SessionHealthTrend[]
+  averageActivitiesPerSession: number
+}
+
+export interface SessionHealthDetail {
+  sessionId: string
+  label: string | null
+  project: string | null
+  started_at: string
+  ended_at: string | null
+  score: number // 0-1
+  gates: Record<string, 'pass' | 'fail' | 'not_applicable'>
+  activityCounts: Record<string, number>
+  totalActivities: number
+  timeline: Array<{ type: string; details: string | null; timestamp: string }>
+  gaps: string[]
+}

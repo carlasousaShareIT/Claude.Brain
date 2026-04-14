@@ -7,6 +7,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { SessionTimeline } from './session-timeline'
 import { SessionHandoffSection } from './session-handoff'
+import { SessionHealthDetail } from './session-health-detail'
 import type { SessionSummary } from '@/lib/types'
 
 interface SessionCardProps {
@@ -129,6 +130,7 @@ export function SessionCard({
         {isExpanded && (
           <>
             <SessionHandoffSection sessionId={session.id} />
+            <SessionHealthDetail sessionId={session.id} />
             <SessionTimeline session={session} />
           </>
         )}
