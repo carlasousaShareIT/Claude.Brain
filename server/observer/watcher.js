@@ -166,6 +166,9 @@ export const watchAgent = ({ sessionId, jsonlPath, agentName, missionId, taskId,
 
   const engine = new ObserverEngine({ agentProfile });
 
+  // Resolve parent session early so violations use the same session ID as metrics
+  const parentSessionId = extractParentSessionFromPath(jsonlPath) || sessionId;
+
   // Format validation counters
   let totalEvents = 0;
   let unknownEvents = 0;
@@ -206,11 +209,11 @@ export const watchAgent = ({ sessionId, jsonlPath, agentName, missionId, taskId,
         }
         v.mode = observerConfig.mode;
 
-        // Persist to DB
+        // Persist to DB (use parentSessionId so violations join to metrics)
         try {
           createViolation({
             agentName: v.agentName,
-            sessionId,
+            sessionId: parentSessionId,
             missionId: missionId || null,
             taskId: taskId || null,
             violationType: v.type,
@@ -283,30 +286,8 @@ export const unwatchAgent = (sessionId, agentName) => {
     fullEngine.processEvent(event);
   }
   const metrics = fullEngine.getMetrics();
-  const finalViolations = fullEngine.getViolations();
 
-  // Persist violations that the live tailer may have missed
-  if (finalViolations.length > 0) {
-    for (const v of finalViolations) {
-      if (observerConfig.mode === "passive") v.severity = "warning";
-      try {
-        createViolation({
-          agentName: v.agentName,
-          sessionId: entry.sessionId,
-          missionId: entry.missionId || null,
-          taskId: entry.taskId || null,
-          violationType: v.type,
-          details: v.details,
-          severity: v.severity,
-        });
-      } catch (err) {
-        // Skip duplicates silently
-      }
-    }
-    console.log(`[observer] persisted ${finalViolations.length} violations from full read for ${key}`);
-  }
-
-  // Resolve parent session for subagents (so metrics join to the sessions table)
+  // Resolve parent session so violations + metrics use the same session ID
   const parentSessionId = extractParentSessionFromPath(entry.jsonlPath) || entry.sessionId;
 
   // Persist final metrics to DB
@@ -453,11 +434,12 @@ const checkStuckAgents = () => {
     const severity = observerConfig.mode === "passive" ? "warning" : "critical";
     const details = { silenceSeconds: Math.round(silenceSec), threshold: thresholdSec, source: "heartbeat" };
 
-    // Persist violation
+    // Persist violation (use parent session so violations join to metrics)
+    const stuckParentSession = extractParentSessionFromPath(entry.jsonlPath) || entry.sessionId;
     try {
       createViolation({
         agentName: entry.agentName,
-        sessionId: entry.sessionId,
+        sessionId: stuckParentSession,
         missionId: entry.missionId || null,
         taskId: entry.taskId || null,
         violationType: "stuck",

@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, Filter } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { AgentMetricsSummary } from '@/lib/types'
+import type { AgentMetricsSummary, ObserverViolation } from '@/lib/types'
 
 type SortKey = 'agent' | 'totalToolCalls' | 'totalDurationMs' | 'totalTokens' | 'violationCount' | 'taskCount'
 
@@ -44,8 +45,89 @@ function ToolDistribution({ dist }: { dist: Record<string, number> }) {
   )
 }
 
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'text-brain-red bg-brain-red/10 border-brain-red/20',
+  error: 'text-brain-red bg-brain-red/10 border-brain-red/20',
+  warning: 'text-brain-amber bg-brain-amber/10 border-brain-amber/20',
+  info: 'text-brain-accent bg-brain-accent/10 border-brain-accent/20',
+}
+
+function relativeTime(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffMs = now - then
+  const seconds = Math.floor(diffMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) return `${days}d ago`
+  if (hours > 0) return `${hours}h ago`
+  if (minutes > 0) return `${minutes}m ago`
+  return 'just now'
+}
+
+function formatContextKey(key: string): string {
+  return key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
+}
+
+function formatContextValue(value: unknown): string {
+  if (value === null || value === undefined) return '\u2014'
+  if (typeof value === 'number') return value.toLocaleString()
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value)
+}
+
+function InlineViolationsList({ violations }: { violations: ObserverViolation[] }) {
+  return (
+    <div className="space-y-1">
+      {violations.map((v) => (
+        <div key={v.id} className="rounded bg-brain-surface/50 px-2 py-1.5 space-y-0.5">
+          <div className="flex items-start gap-1.5 flex-wrap">
+            <Badge
+              variant="outline"
+              className={cn('shrink-0 text-[9px] border', SEVERITY_COLORS[v.severity])}
+            >
+              {v.severity}
+            </Badge>
+            <Badge
+              variant="secondary"
+              className="shrink-0 text-[9px] text-muted-foreground"
+            >
+              {v.type}
+            </Badge>
+            <span className="text-[10px] text-foreground/80 leading-snug flex-1 min-w-0">
+              {v.message}
+            </span>
+            <span className="shrink-0 text-[9px] text-[#62627a]">
+              {relativeTime(v.createdAt)}
+            </span>
+          </div>
+          {v.context && Object.keys(v.context).length > 0 && (
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0 pl-1">
+              {Object.entries(v.context).map(([key, value]) => (
+                <div key={key} className="contents">
+                  <span className="text-[9px] text-[#62627a]">{formatContextKey(key)}</span>
+                  <span className="text-[9px] text-foreground/60 font-mono">{formatContextValue(value)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AgentMetricRow({ agent }: { agent: AgentMetricsSummary }) {
   const [expanded, setExpanded] = useState(false)
+
+  const { data: violations, isLoading: violationsLoading } = useQuery({
+    queryKey: ['agent-violations', agent.agent, agent.sessionId],
+    queryFn: () => api.getViolations({ agent: agent.agent, session: agent.sessionId || undefined }),
+    enabled: expanded && agent.violationCount > 0,
+  })
 
   return (
     <div className="rounded-md bg-brain-base p-3">
@@ -106,6 +188,20 @@ function AgentMetricRow({ agent }: { agent: AgentMetricsSummary }) {
               <span>Last active: <span className="text-foreground/70">{new Date(agent.lastActive).toLocaleDateString()}</span></span>
             )}
           </div>
+          {agent.violationCount > 0 && (
+            <div>
+              <span className="text-[10px] font-medium text-[#62627a] uppercase tracking-wider">Violations</span>
+              <div className="mt-1">
+                {violationsLoading ? (
+                  <span className="text-[10px] text-[#62627a]">Loading violations...</span>
+                ) : violations && violations.length > 0 ? (
+                  <InlineViolationsList violations={violations} />
+                ) : (
+                  <span className="text-[10px] text-[#62627a]">No violations found.</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -137,15 +233,37 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 export function AgentMetricsCard() {
   const [sortKey, setSortKey] = useState<SortKey>('totalToolCalls')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [filterAgent, setFilterAgent] = useState('')
+  const [filterProject, setFilterProject] = useState('')
+  const [filterSession, setFilterSession] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
 
+  // Always fetch unfiltered data — used for deriving filter options and client-side filtering.
   const { data, isLoading } = useQuery({
     queryKey: ['agent-metrics-summary'],
-    queryFn: api.getAgentMetricsSummary,
+    queryFn: () => api.getAgentMetricsSummary(),
   })
 
-  const sorted = useMemo(() => {
+  // Derive filter options from the FULL unfiltered dataset.
+  const { agents, projects } = useMemo(() => {
+    if (!data) return { agents: [], projects: [] }
+    const agentSet = new Set<string>()
+    const projectSet = new Set<string>()
+    for (const m of data) {
+      agentSet.add(m.agent)
+      if (m.project) projectSet.add(m.project)
+    }
+    return { agents: [...agentSet].sort(), projects: [...projectSet].sort() }
+  }, [data])
+
+  // Client-side filtering then sorting.
+  const filtered = useMemo(() => {
     if (!data) return []
-    return [...data].sort((a, b) => {
+    let list = data
+    if (filterAgent) list = list.filter((m) => m.agent === filterAgent)
+    if (filterProject) list = list.filter((m) => m.project === filterProject)
+    if (filterSession) list = list.filter((m) => m.sessionId?.toLowerCase().includes(filterSession.toLowerCase()))
+    return [...list].sort((a, b) => {
       const aVal = sortKey === 'agent' ? a.agent : a[sortKey]
       const bVal = sortKey === 'agent' ? b.agent : b[sortKey]
       if (typeof aVal === 'string' && typeof bVal === 'string') {
@@ -153,7 +271,7 @@ export function AgentMetricsCard() {
       }
       return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number)
     })
-  }, [data, sortKey, sortDir])
+  }, [data, filterAgent, filterProject, filterSession, sortKey, sortDir])
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -163,6 +281,8 @@ export function AgentMetricsCard() {
       setSortDir('desc')
     }
   }
+
+  const hasActiveFilters = !!(filterAgent || filterProject || filterSession)
 
   if (isLoading) {
     return (
@@ -180,19 +300,87 @@ export function AgentMetricsCard() {
 
   return (
     <div className="space-y-3">
-      {/* Sort controls */}
-      <div className="flex flex-wrap gap-3">
-        <SortHeader label="Agent" sortKey="agent" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-        <SortHeader label="Tool calls" sortKey="totalToolCalls" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-        <SortHeader label="Duration" sortKey="totalDurationMs" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-        <SortHeader label="Tokens" sortKey="totalTokens" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-        <SortHeader label="Violations" sortKey="violationCount" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+      {/* Sort controls + filter toggle */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-3">
+          <SortHeader label="Agent" sortKey="agent" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <SortHeader label="Tool calls" sortKey="totalToolCalls" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <SortHeader label="Duration" sortKey="totalDurationMs" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <SortHeader label="Tokens" sortKey="totalTokens" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+          <SortHeader label="Violations" sortKey="violationCount" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+        </div>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="text-[10px] text-[#62627a] shrink-0"
+          onClick={() => setShowFilters(!showFilters)}
+        >
+          <Filter className="h-3 w-3 mr-1" />
+          Filter
+          {hasActiveFilters && (
+            <span className="ml-1 text-brain-accent">*</span>
+          )}
+        </Button>
       </div>
+
+      {/* Filter bar */}
+      {showFilters && (
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={filterAgent}
+            onChange={(e) => setFilterAgent(e.target.value)}
+            className="h-7 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground outline-none focus:border-foreground/20"
+          >
+            <option value="">All agents</option>
+            {agents.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <select
+            value={filterProject}
+            onChange={(e) => setFilterProject(e.target.value)}
+            className="h-7 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground outline-none focus:border-foreground/20"
+          >
+            <option value="">All projects</option>
+            {projects.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={filterSession}
+            onChange={(e) => setFilterSession(e.target.value)}
+            placeholder="Session ID..."
+            className="h-7 w-32 rounded-md bg-brain-surface border border-brain-surface px-2 text-xs text-foreground placeholder:text-[#8585a0] outline-none focus:border-foreground/20"
+          />
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-[10px] text-[#62627a]"
+              onClick={() => {
+                setFilterAgent('')
+                setFilterProject('')
+                setFilterSession('')
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Result count when filtered */}
+      {hasActiveFilters && (
+        <p className="text-[10px] text-[#62627a]">
+          Showing {filtered.length} of {data.length} agents.
+        </p>
+      )}
 
       {/* Agent cards */}
       <div className="space-y-2">
-        {sorted.map((agent) => (
-          <AgentMetricRow key={agent.agent} agent={agent} />
+        {filtered.map((agent) => (
+          <AgentMetricRow key={`${agent.agent}-${agent.sessionId ?? ''}`} agent={agent} />
         ))}
       </div>
     </div>

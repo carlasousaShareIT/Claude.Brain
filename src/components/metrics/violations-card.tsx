@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Shield, ShieldOff, Filter } from 'lucide-react'
+import { AlertTriangle, Shield, ShieldOff, Filter, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import type { ObserverViolation } from '@/lib/types'
 
 const SEVERITY_COLORS: Record<string, string> = {
+  critical: 'text-brain-red bg-brain-red/10 border-brain-red/20',
   error: 'text-brain-red bg-brain-red/10 border-brain-red/20',
   warning: 'text-brain-amber bg-brain-amber/10 border-brain-amber/20',
   info: 'text-brain-accent bg-brain-accent/10 border-brain-accent/20',
@@ -34,7 +35,27 @@ function relativeTime(dateStr: string): string {
   return 'just now'
 }
 
+function formatContextValue(value: unknown): string {
+  if (value === null || value === undefined) return '\u2014'
+  if (typeof value === 'number') return value.toLocaleString()
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value)
+}
+
+function formatContextKey(key: string): string {
+  // camelCase to spaced: readCount -> read count, silenceSeconds -> silence seconds
+  return key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
+}
+
 function ViolationRow({ violation }: { violation: ObserverViolation }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasDetails = !!(
+    violation.context ||
+    violation.missionId ||
+    violation.taskId
+  )
+
   return (
     <div className="rounded-md bg-brain-base p-2.5 space-y-1">
       <div className="flex items-start gap-2">
@@ -56,6 +77,16 @@ function ViolationRow({ violation }: { violation: ObserverViolation }) {
         <span className="shrink-0 text-[10px] text-[#62627a]">
           {relativeTime(violation.createdAt)}
         </span>
+        {hasDetails && (
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="shrink-0 text-[#62627a] hover:text-foreground transition-colors"
+          >
+            {expanded
+              ? <ChevronDown className="h-3.5 w-3.5" />
+              : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-2 pl-0.5">
         {violation.agent && (
@@ -63,10 +94,39 @@ function ViolationRow({ violation }: { violation: ObserverViolation }) {
         )}
         {violation.sessionId && (
           <span className="text-[10px] text-[#62627a] font-mono">
-            {violation.sessionId.slice(0, 8)}
+            {expanded ? violation.sessionId : violation.sessionId.slice(0, 8)}
           </span>
         )}
       </div>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="mt-1.5 border-t border-white/5 pt-1.5 space-y-1.5">
+          {violation.context && Object.keys(violation.context).length > 0 && (
+            <div>
+              <span className="text-[10px] font-medium text-[#62627a] uppercase tracking-wider">Context</span>
+              <div className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                {Object.entries(violation.context).map(([key, value]) => (
+                  <div key={key} className="contents">
+                    <span className="text-[10px] text-[#62627a]">{formatContextKey(key)}</span>
+                    <span className="text-[10px] text-foreground/70 font-mono">{formatContextValue(value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {(violation.missionId || violation.taskId) && (
+            <div className="flex gap-3 text-[10px] text-[#62627a]">
+              {violation.missionId && (
+                <span>Mission: <span className="text-foreground/70 font-mono">{violation.missionId}</span></span>
+              )}
+              {violation.taskId && (
+                <span>Task: <span className="text-foreground/70 font-mono">{violation.taskId}</span></span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -97,9 +157,17 @@ export function ViolationsCard() {
     queryFn: api.getObserverConfig,
   })
 
-  // Derive unique agents and types for filter options.
   const violationsList = Array.isArray(violations.data) ? violations.data : []
+
+  // Bug 3 fix: derive filter options from unfiltered aggregates (stats), not from filtered list.
   const { agents, types } = useMemo(() => {
+    if (stats.data) {
+      return {
+        agents: Object.keys(stats.data.byAgent).sort(),
+        types: Object.keys(stats.data.byType).sort(),
+      }
+    }
+    // Fallback if stats not loaded yet: derive from current list.
     const agentSet = new Set<string>()
     const typeSet = new Set<string>()
     for (const v of violationsList) {
@@ -107,7 +175,7 @@ export function ViolationsCard() {
       typeSet.add(v.type)
     }
     return { agents: [...agentSet].sort(), types: [...typeSet].sort() }
-  }, [violationsList])
+  }, [stats.data, violationsList])
 
   const isPassive = config.data?.mode === 'passive'
 

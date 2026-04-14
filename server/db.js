@@ -561,6 +561,42 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated: added session_activity table (v2.0.0)");
   }
 
+  // Schema migration: correlate violations to metric sessions by timestamp (v2.1.1)
+  // Assigns each violation to the metric row whose time window contains it.
+  // A metric row with created_at=T and duration_ms=D was active from T-D to T.
+  const schemaVersion211 = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get();
+  if (schemaVersion211 && schemaVersion211.value < "2.1.1") {
+    // Reassign violation session IDs based on timestamp overlap with metric time windows
+    db.exec(`
+      UPDATE observer_violations
+      SET session_id = (
+        SELECT am.session_id FROM agent_metrics am
+        WHERE am.agent_name = observer_violations.agent_name
+        AND observer_violations.created_at >= datetime(am.created_at, '-' || (am.duration_ms / 1000) || ' seconds')
+        AND observer_violations.created_at <= am.created_at
+        LIMIT 1
+      )
+      WHERE EXISTS (
+        SELECT 1 FROM agent_metrics am
+        WHERE am.agent_name = observer_violations.agent_name
+        AND observer_violations.created_at >= datetime(am.created_at, '-' || (am.duration_ms / 1000) || ' seconds')
+        AND observer_violations.created_at <= am.created_at
+      );
+    `);
+
+    // Re-derive violation_count on all metric rows from actual violations
+    db.exec(`
+      UPDATE agent_metrics SET violation_count = (
+        SELECT COUNT(*) FROM observer_violations
+        WHERE session_id = agent_metrics.session_id
+        AND agent_name = agent_metrics.agent_name
+      );
+    `);
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "2.1.1");
+    console.log("[brain-db] migrated: timestamp-correlated violation session IDs (v2.1.1)");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {
