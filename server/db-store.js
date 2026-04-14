@@ -240,7 +240,7 @@ export const getEntries = (section, projectId) => {
   if (projectId) {
     rows = db.prepare(`
       SELECT DISTINCT e.* FROM entries e, json_each(e.project) AS je
-      WHERE e.section = ? AND je.value = ?
+      WHERE e.section = ? AND je.value IN (?, 'general')
       ORDER BY e.created_at
     `).all(section, projectId);
   } else {
@@ -351,7 +351,7 @@ export const getDecisions = (projectId) => {
   if (projectId) {
     rows = db.prepare(`
       SELECT DISTINCT d.* FROM decisions d, json_each(d.project) AS je
-      WHERE je.value = ?
+      WHERE je.value IN (?, 'general')
       ORDER BY d.created_at
     `).all(projectId);
   } else {
@@ -2293,6 +2293,20 @@ export const getSessionById = (id) => {
   const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
   if (!row) return null;
   return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null };
+};
+
+export const updateSession = (id, { label, project } = {}) => {
+  const db = getDb();
+  const existing = db.prepare("SELECT id FROM sessions WHERE id = ?").get(id);
+  if (!existing) return null;
+  const sets = [];
+  const params = [];
+  if (label !== undefined) { sets.push("label = ?"); params.push(label); }
+  if (project !== undefined) { sets.push("project = ?"); params.push(project); }
+  if (!sets.length) return getSessionById(id);
+  params.push(id);
+  db.prepare(`UPDATE sessions SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+  return getSessionById(id);
 };
 
 export const listSessions = ({ limit = 50, project } = {}) => {

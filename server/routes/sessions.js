@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth } from "../db-store.js";
+import { startSession, endSession, updateSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 import { unwatchAllForSession } from "../observer/watcher.js";
 
@@ -96,6 +96,15 @@ router.post("/:id/activity", (req, res) => {
   if (!validTypes.includes(type)) return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
   recordSessionActivity(req.params.id, type, details || null);
   res.json({ ok: true });
+});
+
+// PATCH /:id — update session metadata (label, project)
+router.patch("/:id", (req, res) => {
+  const { label, project } = req.body;
+  const session = updateSession(req.params.id, { label, project });
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  console.log(`[brain] session updated: ${req.params.id} — project=${project || "(unchanged)"}`);
+  res.json(session);
 });
 
 // GET /:id — single session

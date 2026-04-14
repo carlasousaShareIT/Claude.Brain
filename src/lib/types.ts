@@ -219,6 +219,8 @@ export interface SessionSummary {
   projects: string[]
   earliest: string | null
   latest: string | null
+  startedAt: string | null
+  endedAt: string | null
 }
 
 export interface HealthReference {
