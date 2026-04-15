@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 
-type ActiveTab = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer' | 'analytics';
+export type DetailView = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer' | 'analytics';
+export type ActiveView = 'dashboard' | DetailView;
 
-const VALID_TABS: ActiveTab[] = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics'];
+const VALID_VIEWS: ActiveView[] = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics'];
 
-function tabFromHash(): ActiveTab {
+function viewFromHash(): ActiveView {
   const hash = window.location.hash.replace('#', '');
-  return (VALID_TABS as string[]).includes(hash) ? (hash as ActiveTab) : 'neural';
+  if (!hash || hash === 'dashboard') return 'dashboard';
+  return (VALID_VIEWS as string[]).includes(hash) ? (hash as ActiveView) : 'dashboard';
 }
 
 interface UIState {
-  activeTab: ActiveTab;
+  activeView: ActiveView;
   activeFilter: string;
   activeProject: string;
   sessionFilterId: string;
@@ -18,7 +20,8 @@ interface UIState {
   serverLive: boolean;
   commandPanelOpen: boolean;
   helpExpanded: boolean;
-  setActiveTab: (tab: UIState['activeTab']) => void;
+  pushView: (view: ActiveView) => void;
+  popView: () => void;
   setActiveFilter: (filter: string) => void;
   setActiveProject: (project: string) => void;
   setSessionFilterId: (id: string) => void;
@@ -29,7 +32,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activeTab: tabFromHash(),
+  activeView: viewFromHash(),
   activeFilter: 'all',
   activeProject: '',
   sessionFilterId: '',
@@ -37,9 +40,13 @@ export const useUIStore = create<UIState>((set) => ({
   serverLive: false,
   commandPanelOpen: false,
   helpExpanded: false,
-  setActiveTab: (tab) => {
-    window.location.hash = tab;
-    set({ activeTab: tab });
+  pushView: (view) => {
+    window.location.hash = view === 'dashboard' ? '' : view;
+    set({ activeView: view });
+  },
+  popView: () => {
+    window.location.hash = '';
+    set({ activeView: 'dashboard' });
   },
   setActiveFilter: (filter) => set({ activeFilter: filter }),
   setActiveProject: (project) => set({ activeProject: project }),

@@ -9,8 +9,9 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 
-const VALID_TABS = ['neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics'] as const
-type ActiveTab = typeof VALID_TABS[number]
+import type { ActiveView } from '@/stores/ui-store'
+
+const VALID_VIEWS = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics'] as const
 
 function App() {
   useSSE()
@@ -21,8 +22,10 @@ function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '')
-      if ((VALID_TABS as readonly string[]).includes(hash)) {
-        useUIStore.getState().setActiveTab(hash as ActiveTab)
+      if (!hash) {
+        useUIStore.getState().pushView('dashboard')
+      } else if ((VALID_VIEWS as readonly string[]).includes(hash)) {
+        useUIStore.getState().pushView(hash as ActiveView)
       }
     }
     window.addEventListener('hashchange', handleHashChange)

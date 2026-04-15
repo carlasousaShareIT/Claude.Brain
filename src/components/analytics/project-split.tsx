@@ -1,5 +1,3 @@
-import { cn } from '@/lib/utils'
-
 interface ProjectSplitData {
   metaMinutes: number
   productMinutes: number

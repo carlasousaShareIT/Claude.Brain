@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { cn } from '@/lib/utils'
 
-type TabId = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer' | 'analytics'
+import type { DetailView } from '@/stores/ui-store'
 
 interface TabHelpContent {
   purpose: string
@@ -10,7 +10,7 @@ interface TabHelpContent {
   howToRead: string
 }
 
-const HELP_CONTENT: Record<TabId, TabHelpContent> = {
+const HELP_CONTENT: Record<DetailView, TabHelpContent> = {
   neural: {
     purpose: 'Visual map of all brain entries — architecture decisions, working style preferences, and agent rules organized by section and project.',
     claudeUses: 'Queries /memory/context at session start to load relevant entries. Writes new entries via POST /memory when decisions are made. Searches with /memory/search before tasks to avoid contradictions.',
@@ -54,11 +54,12 @@ const HELP_CONTENT: Record<TabId, TabHelpContent> = {
 }
 
 export function TabHelp() {
-  const activeTab = useUIStore((s) => s.activeTab) as TabId
+  const activeView = useUIStore((s) => s.activeView)
   const helpExpanded = useUIStore((s) => s.helpExpanded)
   const setHelpExpanded = useUIStore((s) => s.setHelpExpanded)
 
-  const content = HELP_CONTENT[activeTab]
+  if (activeView === 'dashboard') return null
+  const content = HELP_CONTENT[activeView as DetailView]
   if (!content) return null
 
   return (
