@@ -29,6 +29,7 @@ import type {
   ObserverConfig,
   AgentMetricsSummary,
   ObserverWatcher,
+  AnalyticsSummary,
 } from '@/lib/types';
 
 class ApiError extends Error {
@@ -359,6 +360,10 @@ export const api = {
   // Mission task retry
   retryTask: (missionId: string, taskId: string) =>
     apiFetch<Mission>(`/missions/${missionId}/tasks/${taskId}/retry`, { method: 'PATCH' }),
+
+  // Analytics
+  getAnalyticsSummary: (limit?: number) =>
+    apiFetch<AnalyticsSummary>(`/analytics/summary${qs({ limit: limit?.toString() })}`),
 };
 
 export { ApiError };

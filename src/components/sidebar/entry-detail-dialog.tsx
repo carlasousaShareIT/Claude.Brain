@@ -41,6 +41,7 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
   const [sessionCopied, setSessionCopied] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [projectEditOpen, setProjectEditOpen] = useState(false)
+  const [localProjects, setLocalProjects] = useState<string[]>([])
 
   if (!entry) return null
 
@@ -134,7 +135,7 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
           <MetaField label="Projects">
             <div className="space-y-1.5">
               <div className="flex flex-wrap gap-1">
-                {entry.project.map((p) => (
+                {(projectEditOpen ? localProjects : entry.project).map((p) => (
                   <Badge
                     key={p}
                     variant="secondary"
@@ -144,7 +145,10 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
                   </Badge>
                 ))}
                 <button
-                  onClick={() => setProjectEditOpen(!projectEditOpen)}
+                  onClick={() => {
+                    if (!projectEditOpen) setLocalProjects(entry.project)
+                    setProjectEditOpen(!projectEditOpen)
+                  }}
                   className="text-[10px] text-brain-accent hover:text-brain-accent/80 transition-colors cursor-pointer"
                 >
                   {projectEditOpen ? 'done' : 'edit'}
@@ -153,15 +157,16 @@ export function EntryDetailDialog({ entry, section, open, onOpenChange }: EntryD
               {projectEditOpen && projectList && (
                 <div className="rounded-md bg-brain-surface/50 p-2 space-y-1 max-h-32 overflow-y-auto">
                   {projectList.filter((p) => p.status === 'active').map((proj) => {
-                    const isChecked = entry.project.includes(proj.id)
+                    const isChecked = localProjects.includes(proj.id)
                     return (
                       <label key={proj.id} className="flex items-center gap-2 cursor-pointer">
                         <Checkbox
                           checked={isChecked}
                           onCheckedChange={(checked) => {
                             const newProjects = checked
-                              ? [...entry.project, proj.id]
-                              : entry.project.filter((p) => p !== proj.id)
+                              ? [...localProjects, proj.id]
+                              : localProjects.filter((p) => p !== proj.id)
+                            setLocalProjects(newProjects)
                             retag.mutate({
                               section: section as SectionName,
                               text,

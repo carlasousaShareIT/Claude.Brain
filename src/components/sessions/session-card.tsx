@@ -86,12 +86,22 @@ export function SessionCard({
                   {isFiltered ? 'Remove sidebar filter.' : 'Filter sidebar to session.'}
                 </TooltipContent>
               </Tooltip>
-              {session.latest && (
+              {session.endedAt ? (
+                <div className="flex items-center gap-1 text-[10px] text-[#62627a]">
+                  <Clock className="h-3 w-3" />
+                  <span>{timeAgo(session.endedAt)}</span>
+                </div>
+              ) : session.startedAt ? (
+                <div className="flex items-center gap-1 text-[10px] text-brain-accent">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-brain-accent animate-pulse" />
+                  <span>active</span>
+                </div>
+              ) : session.latest ? (
                 <div className="flex items-center gap-1 text-[10px] text-[#62627a]">
                   <Clock className="h-3 w-3" />
                   <span>{timeAgo(session.latest)}</span>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 

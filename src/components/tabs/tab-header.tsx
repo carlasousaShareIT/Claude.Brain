@@ -10,6 +10,7 @@ const TABS = [
   { key: 'reminders', label: 'Reminders' },
   { key: 'experiments', label: 'Experiments' },
   { key: 'observer', label: 'Observer' },
+  { key: 'analytics', label: 'Analytics' },
 ] as const
 
 export function TabHeader() {

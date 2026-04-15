@@ -8,7 +8,9 @@ export function cn(...inputs: ClassValue[]) {
 
 export function timeAgo(dateStr: string): string {
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  // SQLite timestamps lack timezone — treat as UTC
+  const normalized = /[TZ+\-]/.test(dateStr.slice(-6)) ? dateStr : dateStr + 'Z';
+  const then = new Date(normalized).getTime();
   const diff = now - then;
   if (diff < 0) return 'just now';
   const seconds = Math.floor(diff / 1000);

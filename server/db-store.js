@@ -2057,10 +2057,10 @@ export const getSessions = () => {
     };
   });
 
-  // Sort by latest activity — use latest from entries or startedAt, whichever is more recent
+  // Sort by session end time, falling back to latest brain write, then start time
   return result.sort((a, b) => {
-    const aTime = [a.latest, a.startedAt].filter(Boolean).sort().pop() || "";
-    const bTime = [b.latest, b.startedAt].filter(Boolean).sort().pop() || "";
+    const aTime = a.endedAt || a.latest || a.startedAt || "";
+    const bTime = b.endedAt || b.latest || b.startedAt || "";
     return bTime.localeCompare(aTime);
   });
 };
@@ -2861,6 +2861,229 @@ export const createAgentMetrics = ({ agentName, sessionId, missionId, taskId, to
   const derivedViolationCount = derivedRow ? derivedRow.violation_count : (violationCount || 0);
 
   return { id, agentName, sessionId: sessionId || null, missionId: missionId || null, taskId: taskId || null, toolCalls: toolCalls || {}, totalCalls: totalCalls || 0, firstWriteAt: firstWriteAt || null, commitCount: commitCount || 0, testRunCount: testRunCount || 0, testPassCount: testPassCount || 0, testFailCount: testFailCount || 0, violationCount: derivedViolationCount, durationMs: durationMs || 0, inputTokens: inputTokens || 0, outputTokens: outputTokens || 0, createdAt: ts };
+};
+
+// ---------------------------------------------------------------------------
+// Analytics summary
+// ---------------------------------------------------------------------------
+
+export const getAnalyticsSummary = (limit = 30) => {
+  const db = getDb();
+
+  // Fetch the last N sessions ordered newest-first
+  const sessions = db.prepare(
+    "SELECT id, label, project, started_at, ended_at FROM sessions ORDER BY started_at DESC LIMIT ?"
+  ).all(limit);
+
+  const sessionIds = sessions.map(s => s.id);
+
+  // ── Compliance ────────────────────────────────────────────────────────────
+  const rates = {
+    brain_query: { passed: 0, total: 0, rate: 0 },
+    agent_profile: { passed: 0, total: 0, rate: 0 },
+    reviewer: { passed: 0, total: 0, rate: 0 },
+  };
+  const complianceSessions = [];
+
+  // Bulk-fetch all session activities in one query
+  const allActivities = sessionIds.length > 0
+    ? db.prepare(
+        `SELECT session_id, activity_type, details FROM session_activity WHERE session_id IN (${sessionIds.map(() => "?").join(",")})`
+      ).all(...sessionIds)
+    : [];
+  const activitiesBySession = {};
+  for (const a of allActivities) {
+    if (!activitiesBySession[a.session_id]) activitiesBySession[a.session_id] = [];
+    activitiesBySession[a.session_id].push(a);
+  }
+
+  for (const s of sessions) {
+    const activities = activitiesBySession[s.id] || [];
+
+    const brainQueried = activities.some(a => a.activity_type === "brain_query");
+    const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
+    const profilesInjected = activities
+      .filter(a => a.activity_type === "profile_inject")
+      .map(a => a.details)
+      .filter(Boolean);
+    const commitCount = activities.filter(a => a.activity_type === "commit").length;
+    const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
+
+    const gates = {
+      brain_query_gate: brainQueried ? "pass" : "fail",
+      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
+      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
+    };
+
+    rates.brain_query.total++;
+    if (gates.brain_query_gate === "pass") rates.brain_query.passed++;
+
+    rates.agent_profile.total++;
+    if (gates.agent_profile_gate === "pass") rates.agent_profile.passed++;
+
+    if (gates.reviewer_gate !== "not_applicable") {
+      rates.reviewer.total++;
+      if (gates.reviewer_gate === "pass") rates.reviewer.passed++;
+    }
+
+    const applicable = Object.values(gates).filter(v => v !== "not_applicable");
+    const passCount = applicable.filter(v => v === "pass").length;
+    const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+
+    complianceSessions.push({
+      sessionId: s.id,
+      label: s.label || null,
+      project: s.project || null,
+      date: s.started_at ? s.started_at.slice(0, 10) : null,
+      score,
+      gates,
+    });
+  }
+
+  for (const key of Object.keys(rates)) {
+    rates[key].rate = rates[key].total > 0
+      ? Math.round((rates[key].passed / rates[key].total) * 100) / 100
+      : 0;
+  }
+
+  const applicableRates = Object.entries(rates).filter(([, v]) => v.total > 0);
+  let worstGate = null;
+  if (applicableRates.length > 0) {
+    worstGate = applicableRates.reduce((worst, [key, v]) =>
+      v.rate < worst[1].rate ? [key, v] : worst
+    )[0];
+  }
+
+  // Oldest-first for the trend array
+  complianceSessions.reverse();
+
+  // ── Violations ───────────────────────────────────────────────────────────
+  let violationSessions = [];
+  const violationTotals = { spiralExplorer: 0, stuck: 0, total: 0 };
+
+  if (sessionIds.length > 0) {
+    const placeholders = sessionIds.map(() => "?").join(",");
+    const violationRows = db.prepare(
+      `SELECT session_id, violation_type, COUNT(*) as cnt FROM observer_violations WHERE session_id IN (${placeholders}) GROUP BY session_id, violation_type`
+    ).all(...sessionIds);
+
+    // Map violations per session
+    const violationsBySession = {};
+    for (const row of violationRows) {
+      if (!violationsBySession[row.session_id]) {
+        violationsBySession[row.session_id] = { spiralExplorer: 0, stuck: 0, total: 0 };
+      }
+      const type = row.violation_type;
+      const count = row.cnt;
+      violationsBySession[row.session_id].total += count;
+      violationTotals.total += count;
+      if (type === "spiral_explorer" || type === "spiralExplorer") {
+        violationsBySession[row.session_id].spiralExplorer += count;
+        violationTotals.spiralExplorer += count;
+      } else if (type === "stuck" || type === "stuck_loop") {
+        violationsBySession[row.session_id].stuck += count;
+        violationTotals.stuck += count;
+      }
+    }
+
+    // Only include sessions that have violations
+    for (const s of sessions) {
+      const v = violationsBySession[s.id];
+      if (v) {
+        violationSessions.push({
+          sessionId: s.id,
+          label: s.label || null,
+          spiralExplorer: v.spiralExplorer,
+          stuck: v.stuck,
+          total: v.total,
+        });
+      }
+    }
+  }
+
+  // ── Project split ─────────────────────────────────────────────────────────
+  let metaMinutes = 0;
+  let productMinutes = 0;
+  const byProject = {};
+
+  for (const s of sessions) {
+    const startMs = s.started_at ? new Date(s.started_at).getTime() : null;
+    const endMs = s.ended_at ? new Date(s.ended_at).getTime() : null;
+
+    // Skip sessions without proper end time — they inflate the numbers
+    if (startMs === null || endMs === null || isNaN(startMs) || isNaN(endMs)) continue;
+
+    // Cap at 4 hours to avoid overnight sessions skewing the ratio
+    const rawMinutes = Math.max(0, (endMs - startMs) / 60000);
+    const durationMinutes = Math.min(rawMinutes, 240);
+    const project = s.project || "unknown";
+
+    byProject[project] = (byProject[project] || 0) + durationMinutes;
+
+    if (project === "brain-app") {
+      metaMinutes += durationMinutes;
+    } else {
+      productMinutes += durationMinutes;
+    }
+  }
+
+  // Round values
+  metaMinutes = Math.round(metaMinutes);
+  productMinutes = Math.round(productMinutes);
+  for (const k of Object.keys(byProject)) {
+    byProject[k] = Math.round(byProject[k]);
+  }
+
+  // ── Experiments ───────────────────────────────────────────────────────────
+  const activeExps = db.prepare("SELECT * FROM experiments WHERE status = 'active' ORDER BY created_at DESC").all();
+  const experiments = activeExps.map(expRow => {
+    const obsRows = db.prepare(
+      "SELECT * FROM observations WHERE experiment_id = ? ORDER BY created_at"
+    ).all(expRow.id);
+
+    const positive = obsRows.filter(o => o.sentiment === "positive").length;
+    const negative = obsRows.filter(o => o.sentiment === "negative").length;
+    const neutral = obsRows.filter(o => o.sentiment === "neutral").length;
+
+    const recentObs = obsRows.length > 0 ? obsRows[obsRows.length - 1] : null;
+    const last3 = obsRows.slice(-3).map(o => o.sentiment);
+
+    let trend = "neutral";
+    if (last3.length > 0) {
+      const posCount = last3.filter(s => s === "positive").length;
+      const negCount = last3.filter(s => s === "negative").length;
+      if (posCount > negCount) trend = "positive";
+      else if (negCount > posCount) trend = "negative";
+    }
+
+    return {
+      id: expRow.id,
+      name: expRow.name,
+      observationCount: obsRows.length,
+      sentimentBreakdown: { positive, negative, neutral },
+      recentObservation: recentObs ? recentObs.text : null,
+      trend,
+    };
+  });
+
+  return {
+    compliance: {
+      rates,
+      worstGate,
+      sessions: complianceSessions,
+    },
+    violations: {
+      sessions: violationSessions,
+      totals: violationTotals,
+    },
+    projectSplit: {
+      metaMinutes,
+      productMinutes,
+      byProject,
+    },
+    experiments,
+    analyzedSessions: sessions.length,
+  };
 };
 
 export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}) => {

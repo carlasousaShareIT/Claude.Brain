@@ -27,6 +27,7 @@ import sessionsRouter from "./routes/sessions.js";
 import sseRouter from "./routes/sse.js";
 import auditRouter from "./routes/audit.js";
 import observerRouter from "./routes/observer.js";
+import analyticsRouter from "./routes/analytics.js";
 import { startAuditSchedule, stopAuditSchedule } from "./brain-audit.js";
 import { cleanup as cleanupObserver } from "./observer/watcher.js";
 import { startDirectoryWatcher, stopDirectoryWatcher } from "./observer/directory-watcher.js";
@@ -83,6 +84,7 @@ app.use("/sessions", startupRouter);
 app.use("/sessions", sessionsRouter);
 app.use("/audit", auditRouter);
 app.use("/observer", observerRouter);
+app.use("/analytics", analyticsRouter);
 
 // POST /memory/merge — merge external brain data
 app.post("/memory/merge", (req, res, next) => {

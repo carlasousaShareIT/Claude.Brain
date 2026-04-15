@@ -464,3 +464,51 @@ export interface SessionHealthDetail {
   timeline: Array<{ type: string; details: string | null; timestamp: string }>
   gaps: string[]
 }
+
+// Analytics
+export interface AnalyticsComplianceSession {
+  sessionId: string
+  label: string | null
+  project: string | null
+  date: string | null
+  score: number
+  gates: Record<string, 'pass' | 'fail' | 'not_applicable'>
+}
+
+export interface AnalyticsViolationSession {
+  sessionId: string
+  label: string | null
+  spiralExplorer: number
+  stuck: number
+  total: number
+}
+
+export interface AnalyticsProjectSplit {
+  metaMinutes: number
+  productMinutes: number
+  byProject: Record<string, number>
+}
+
+export interface AnalyticsExperiment {
+  id: string
+  name: string
+  observationCount: number
+  sentimentBreakdown: { positive: number; negative: number; neutral: number }
+  recentObservation: string | null
+  trend: 'positive' | 'negative' | 'neutral' | null
+}
+
+export interface AnalyticsSummary {
+  compliance: {
+    rates: Record<string, { passed: number; total: number; rate: number }>
+    worstGate: string | null
+    sessions: AnalyticsComplianceSession[]
+  }
+  violations: {
+    sessions: AnalyticsViolationSession[]
+    totals: Record<string, number>
+  }
+  projectSplit: AnalyticsProjectSplit
+  experiments: AnalyticsExperiment[]
+  analyzedSessions: number
+}

@@ -10,7 +10,6 @@ import { ActivityChart } from './activity-chart'
 import { StalenessCard } from './staleness-card'
 import { HealthCard } from './health-card'
 import { AuditFindingsCard } from './audit-findings-card'
-import { SessionHealthCardContent } from './session-health-card'
 
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
@@ -65,10 +64,6 @@ export function MetricsView() {
 
           <MetricCard title="Activity (last 30 days)">
             <ActivityChart activityByDay={data.activityByDay} />
-          </MetricCard>
-
-          <MetricCard title="Session health" className="md:col-span-2">
-            <SessionHealthCardContent />
           </MetricCard>
 
           <MetricCard title="Staleness & coverage" className="md:col-span-2">

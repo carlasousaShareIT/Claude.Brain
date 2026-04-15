@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { cn } from '@/lib/utils'
 
-type TabId = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer'
+type TabId = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'observer' | 'analytics'
 
 interface TabHelpContent {
   purpose: string
@@ -45,6 +45,11 @@ const HELP_CONTENT: Record<TabId, TabHelpContent> = {
     purpose: 'Real-time observer dashboard. Monitors live agent sessions via JSONL file tailing, tracks violations, and shows agent execution metrics.',
     claudeUses: 'The observer watches agent JSONL log files (source of truth). Directory watcher auto-registers new agents. SubagentStart/Stop hooks enrich watcher entries with real agent types. Violations are passive (calibrating) — collecting data before promoting to active enforcement.',
     howToRead: 'Live watchers show currently observed agents with event counts and metrics. Violations list shows detected issues (all warnings in passive mode). Agent metrics aggregate tool calls, duration, and tokens across sessions.',
+  },
+  analytics: {
+    purpose: 'Session quality analytics. Tracks compliance with preparation steps (brain queries, profile injection), violation patterns, project time distribution, and experiment progress.',
+    claudeUses: 'The /analytics/summary endpoint aggregates compliance, violations, and time data across recent sessions. Claude records observations to the active preparation-discipline experiment after each session.',
+    howToRead: 'Compliance scorecard shows gate pass rates with a trend sparkline. Red gates need attention. Violation feed highlights sessions with spiral or stuck patterns. Project split shows meta-work vs product-work ratio. Experiment cards track observation trends.',
   },
 }
 

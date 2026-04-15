@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Loader2,
   Play,
@@ -100,6 +100,8 @@ function FindingRow({
   onMerge: (keepSection: string, keepText: string, archiveSection: string, archiveText: string, findingId: string) => void
 }) {
   const Icon = TYPE_ICONS[finding.type]
+  const [expanded, setExpanded] = useState(false)
+  const toggle = useCallback(() => setExpanded(v => !v), [])
 
   return (
     <div className={cn('rounded-md bg-brain-base p-3 space-y-1.5', isDismissed && 'opacity-50')}>
@@ -132,8 +134,11 @@ function FindingRow({
               >
                 {finding.section}
               </Badge>
-              <p className="text-[10px] text-foreground leading-snug flex-1">
-                {truncate(finding.text, 120)}
+              <p
+                className="text-[10px] text-foreground leading-snug flex-1 cursor-pointer hover:text-brain-accent transition-colors"
+                onClick={toggle}
+              >
+                {expanded ? finding.text : truncate(finding.text, 120)}
               </p>
               {!isDismissed && (
                 <div className="flex items-center gap-1 shrink-0">
@@ -166,8 +171,11 @@ function FindingRow({
               >
                 {finding.relatedSection}
               </Badge>
-              <p className="text-[10px] text-[#62627a] leading-snug flex-1">
-                {truncate(finding.relatedText, 120)}
+              <p
+                className="text-[10px] text-[#62627a] leading-snug flex-1 cursor-pointer hover:text-brain-accent transition-colors"
+                onClick={toggle}
+              >
+                {expanded ? finding.relatedText : truncate(finding.relatedText, 120)}
               </p>
               {!isDismissed && finding.relatedSection && (
                 <div className="flex items-center gap-1 shrink-0">
@@ -202,8 +210,11 @@ function FindingRow({
             >
               {finding.section}
             </Badge>
-            <p className="text-xs text-foreground leading-snug flex-1">
-              {truncate(finding.text, 80)}
+            <p
+              className="text-xs text-foreground leading-snug flex-1 cursor-pointer hover:text-brain-accent transition-colors"
+              onClick={toggle}
+            >
+              {expanded ? finding.text : truncate(finding.text, 80)}
             </p>
             <div className="flex items-center gap-1 shrink-0">
               {finding.type === 'promotable' && !isDismissed && (
@@ -214,6 +225,16 @@ function FindingRow({
                   onClick={() => onPromote(finding.entryId, finding.id)}
                 >
                   Promote
+                </Button>
+              )}
+              {(finding.type === 'stale' || finding.type === 'noise') && !isDismissed && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="text-[10px] text-[#62627a] hover:text-brain-red"
+                  onClick={() => onArchive(finding.section, finding.text, finding.id)}
+                >
+                  Archive
                 </Button>
               )}
               {!isDismissed && (
