@@ -8,6 +8,7 @@ import { slugify, tokenize, similarity } from "./text-utils.js";
 import { detectSection, normalizeProject, entryText, getEntryProjects, filterByProject } from "./entry-utils.js";
 import { sanitizePrompt } from "./sanitize.js";
 import { calculateGates, calculateScore, accumulateRates } from "./compliance-utils.js";
+import { recordCall as spiralRecordCall, detect as spiralDetect, clearSession as spiralClearSession } from "./spiral-detector.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,6 +124,7 @@ const rowToProfile = (row) => ({
   role: row.role || "",
   systemPrompt: row.system_prompt || "",
   constraints: parseJson(row.constraints, []),
+  agentTypes: parseJson(row.agent_types, []),
   createdAt: row.created_at || null,
   updatedAt: row.updated_at || null,
 });
@@ -733,6 +735,14 @@ export const updateTask = (missionId, taskId, updates) => {
   // Auto-unblock dependents when a task completes
   const unblockedTasks = [];
   if (status === "completed") {
+    // Increment task_completed_count on the session
+    const taskSessionId = newSessionId || taskRow.session_id;
+    if (taskSessionId) {
+      db.prepare(
+        "UPDATE sessions SET task_completed_count = COALESCE(task_completed_count, 0) + 1 WHERE id = ?"
+      ).run(taskSessionId);
+    }
+
     const allTasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ?").all(missionId);
     const completedIds = new Set(allTasks.filter(t => t.status === "completed" || t.id === taskId).map(t => t.id));
 
@@ -1220,8 +1230,8 @@ export const createProfile = (data) => {
   const id = slugify(data.name, "p", existingIds);
 
   db.prepare(`
-    INSERT INTO profiles (id, name, task_type, project, sections, tags, model, role, system_prompt, constraints, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO profiles (id, name, task_type, project, sections, tags, model, role, system_prompt, constraints, agent_types, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.name,
@@ -1233,6 +1243,7 @@ export const createProfile = (data) => {
     data.role || "",
     data.systemPrompt || "",
     jsonStr(data.constraints || []),
+    jsonStr(data.agentTypes || []),
     ts,
     ts,
   );
@@ -1248,6 +1259,7 @@ export const createProfile = (data) => {
     role: data.role || "",
     systemPrompt: data.systemPrompt || "",
     constraints: data.constraints || [],
+    agentTypes: data.agentTypes || [],
     createdAt: ts,
     updatedAt: ts,
   };
@@ -1270,17 +1282,18 @@ export const updateProfile = (id, updates) => {
   if (updates.role !== undefined) current.role = updates.role;
   if (updates.systemPrompt !== undefined) current.systemPrompt = updates.systemPrompt;
   if (updates.constraints !== undefined) current.constraints = updates.constraints;
+  if (updates.agentTypes !== undefined) current.agentTypes = updates.agentTypes;
   current.updatedAt = ts;
 
   db.prepare(`
     UPDATE profiles SET name = ?, task_type = ?, project = ?, sections = ?, tags = ?,
-      model = ?, role = ?, system_prompt = ?, constraints = ?, updated_at = ?
+      model = ?, role = ?, system_prompt = ?, constraints = ?, agent_types = ?, updated_at = ?
     WHERE id = ?
   `).run(
     current.name, current.taskType, current.project,
     jsonStr(current.sections), jsonStr(current.tags),
     current.model, current.role, current.systemPrompt, jsonStr(current.constraints),
-    ts, id,
+    jsonStr(current.agentTypes), ts, id,
   );
 
   return current;
@@ -2285,6 +2298,8 @@ export const endSession = (id, { handoff } = {}) => {
     console.log(`[brain] session ${id} ended: ${staleTasks.length} in-progress task(s) transitioned to interrupted`);
   }
 
+  spiralClearSession(id);
+
   const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id);
   return { ...row, handoff: row.handoff ? JSON.parse(row.handoff) : null, interruptedTasks: staleTasks.length };
 };
@@ -2512,6 +2527,79 @@ export const getSessionHealth = (sessionId) => {
     timeline,
     gaps,
   };
+};
+
+// ---------------------------------------------------------------------------
+// Heartbeat
+// ---------------------------------------------------------------------------
+
+export const heartbeatSession = (sessionId, toolName = null) => {
+  const db = getDb();
+  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
+  if (!session) return null;
+
+  // Detect spiral BEFORE recording — denied calls must not feed the spiral
+  const spiralResult = spiralDetect(sessionId);
+
+  // Only increment counter and record if NOT spiraling (denied calls don't count)
+  if (!spiralResult.spiral) {
+    if (!session.ended_at) {
+      db.prepare("UPDATE sessions SET tool_call_count = COALESCE(tool_call_count, 0) + 1 WHERE id = ?").run(sessionId);
+    }
+    if (toolName) {
+      spiralRecordCall(sessionId, toolName);
+    }
+  }
+
+  const updated = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
+  const toolCalls = updated.tool_call_count || 0;
+  const tasksCompleted = updated.task_completed_count || 0;
+  const elapsedMs = updated.started_at ? Date.now() - new Date(updated.started_at + "Z").getTime() : 0;
+  const elapsedMin = Math.round(elapsedMs / 60000);
+
+  // Health status — based on tool call count only (elapsed time is informational)
+  // Sessions can stay open all day with low activity — that's fine
+  let status = "green";
+  if (toolCalls > 70) {
+    status = "red";
+  } else if (toolCalls > 40) {
+    status = "yellow";
+  }
+
+  let message = null;
+  if (status === "yellow") {
+    message = `Session getting heavy: ${toolCalls} tool calls, ${tasksCompleted} tasks completed. Consider wrapping up soon.`;
+  }
+  if (status === "red") {
+    message = `Session at ${toolCalls} tool calls, ${tasksCompleted} tasks completed. Consider writing a handoff and starting fresh.`;
+  }
+
+  return { status, toolCalls, elapsedMin, tasksCompleted, message, spiral: spiralResult.spiral, spiralPatterns: spiralResult.patterns };
+};
+
+// ---------------------------------------------------------------------------
+// Profile resolution (subagent_type → profile)
+// ---------------------------------------------------------------------------
+
+export const resolveProfile = (agentType) => {
+  const db = getDb();
+  if (!agentType) {
+    const row = db.prepare("SELECT * FROM profiles WHERE id = 'p-senior-dev'").get();
+    return row ? rowToProfile(row) : null;
+  }
+
+  // Check agent_types JSON array on each profile
+  const profiles = db.prepare("SELECT * FROM profiles").all();
+  for (const row of profiles) {
+    const types = parseJson(row.agent_types, []);
+    if (types.includes(agentType)) {
+      return rowToProfile(row);
+    }
+  }
+
+  // Default to senior-dev
+  const fallback = db.prepare("SELECT * FROM profiles WHERE id = 'p-senior-dev'").get();
+  return fallback ? rowToProfile(fallback) : null;
 };
 
 // ---------------------------------------------------------------------------

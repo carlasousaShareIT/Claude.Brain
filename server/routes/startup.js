@@ -8,6 +8,7 @@ import {
   getResumableMissions,
   recordSessionActivity,
   getSessionCompliance,
+  getSessionById,
 } from "../db-store.js";
 import { getDb } from "../db.js";
 import { broadcastEvent } from "../broadcast.js";
@@ -38,7 +39,7 @@ const isOverdue = (dateStr) => {
   return new Date(dateStr) < new Date();
 };
 
-function formatStartupText({ session, handoff, context, resumable, reminders, compliance }) {
+function formatStartupText({ session, handoff, previousHealth, context, resumable, reminders, compliance }) {
   const lines = [];
 
   // -- Session header
@@ -60,6 +61,18 @@ function formatStartupText({ session, handoff, context, resumable, reminders, co
         lines.push(`- ${item}`);
       }
     }
+    lines.push("");
+  }
+
+  // -- Previous session health
+  if (previousHealth) {
+    lines.push(`## Previous session health`);
+    const parts = [
+      `${previousHealth.toolCalls} tool calls`,
+      `${previousHealth.tasksCompleted} tasks completed`,
+      previousHealth.endedCleanly ? "ended cleanly" : "did NOT end cleanly",
+    ];
+    lines.push(parts.join(" | "));
     lines.push("");
   }
 
@@ -140,6 +153,23 @@ router.post("/startup", (req, res) => {
     if (handoff && handoff.id === sessionId) handoff = null;
   } catch {}
 
+  // 2.5. Get previous session health snapshot
+  let previousHealth = null;
+  try {
+    if (handoff && handoff.id) {
+      const prevSession = getSessionById(handoff.id);
+      if (prevSession) {
+        previousHealth = {
+          sessionId: handoff.id,
+          label: handoff.label || null,
+          toolCalls: prevSession.tool_call_count || 0,
+          tasksCompleted: prevSession.task_completed_count || 0,
+          endedCleanly: !!prevSession.ended_at,
+        };
+      }
+    }
+  } catch {}
+
   // 3. Get brain context
   const context = getContextMarkdown({
     projectId: project || undefined,
@@ -177,6 +207,7 @@ router.post("/startup", (req, res) => {
     return res.json({
       session,
       handoff,
+      previousHealth,
       context,
       resumable: { missions: resumable },
       reminders: filteredReminders,
@@ -187,6 +218,7 @@ router.post("/startup", (req, res) => {
   const text = formatStartupText({
     session,
     handoff,
+    previousHealth,
     context,
     resumable,
     reminders: filteredReminders,

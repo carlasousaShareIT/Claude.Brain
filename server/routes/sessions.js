@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, updateSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth } from "../db-store.js";
+import { startSession, endSession, updateSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth, heartbeatSession } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 import { unwatchAllForSession } from "../observer/watcher.js";
 
@@ -96,6 +96,14 @@ router.post("/:id/activity", (req, res) => {
   if (!validTypes.includes(type)) return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
   recordSessionActivity(req.params.id, type, details || null);
   res.json({ ok: true });
+});
+
+// POST /:id/heartbeat — increment tool call counter, return health status
+router.post("/:id/heartbeat", (req, res) => {
+  const { toolName } = req.body || {};
+  const result = heartbeatSession(req.params.id, toolName);
+  if (!result) return res.status(404).json({ error: "Session not found" });
+  res.json(result);
 });
 
 // PATCH /:id — update session metadata (label, project)

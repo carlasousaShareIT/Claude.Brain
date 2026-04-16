@@ -597,6 +597,36 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated: timestamp-correlated violation session IDs (v2.1.1)");
   }
 
+  // Schema v2.2.0: heartbeat columns on sessions + agent_types on profiles
+  const sessionCols220 = db.prepare("PRAGMA table_info(sessions)").all().map(c => c.name);
+  if (!sessionCols220.includes("tool_call_count")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN tool_call_count INTEGER DEFAULT 0");
+    db.exec("ALTER TABLE sessions ADD COLUMN task_completed_count INTEGER DEFAULT 0");
+
+    // Add agent_types to profiles (secondary guard for crash safety)
+    const profileCols220 = db.prepare("PRAGMA table_info(profiles)").all().map(c => c.name);
+    if (!profileCols220.includes("agent_types")) {
+      db.exec("ALTER TABLE profiles ADD COLUMN agent_types TEXT DEFAULT '[]'");
+    }
+
+    // Seed default agent_types mappings
+    const seeds = {
+      "p-senior-dev": '["general-purpose","Plan"]',
+      "p-researcher": '["Explore"]',
+      "p-reviewer": '["code-reviewer"]',
+      "p-pr-reviewer": '["pr-reviewer"]',
+      "p-writer": '["writer"]',
+    };
+    const updateStmt = db.prepare("UPDATE profiles SET agent_types = ? WHERE id = ?");
+    for (const [id, types] of Object.entries(seeds)) {
+      updateStmt.run(types, id);
+    }
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .run("schema_version", "2.2.0");
+    console.log("[brain-db] migrated: heartbeat columns + profile agent_types (v2.2.0)");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

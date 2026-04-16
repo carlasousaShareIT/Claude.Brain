@@ -1,10 +1,18 @@
 // routes/profiles.js — context profile CRUD
 
 import { Router } from "express";
-import { getProfiles, createProfile, updateProfile, deleteProfile } from "../db-store.js";
+import { getProfiles, createProfile, updateProfile, deleteProfile, resolveProfile } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 
 const router = Router();
+
+// GET /memory/profiles/resolve — resolve subagent_type to profile
+router.get("/memory/profiles/resolve", (req, res) => {
+  const agentType = req.query.agentType || "";
+  const profile = resolveProfile(agentType);
+  if (!profile) return res.status(404).json({ error: "No profiles found" });
+  res.json(profile);
+});
 
 // GET /memory/profiles
 router.get("/memory/profiles", (req, res) => {
