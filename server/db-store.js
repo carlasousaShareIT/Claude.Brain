@@ -2533,6 +2533,11 @@ export const getSessionHealth = (sessionId) => {
 // Heartbeat
 // ---------------------------------------------------------------------------
 
+// Track when perimortem last fired per session (tool_call_count at that point)
+// Fires again after PERIMORTEM_INTERVAL more calls. Resets on server restart.
+const PERIMORTEM_INTERVAL = 30;
+const perimortemLastAt = new Map();
+
 export const heartbeatSession = (sessionId, toolName = null) => {
   const db = getDb();
   const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
@@ -2558,7 +2563,6 @@ export const heartbeatSession = (sessionId, toolName = null) => {
   const elapsedMin = Math.round(elapsedMs / 60000);
 
   // Health status — based on tool call count only (elapsed time is informational)
-  // Sessions can stay open all day with low activity — that's fine
   let status = "green";
   if (toolCalls > 70) {
     status = "red";
@@ -2574,7 +2578,17 @@ export const heartbeatSession = (sessionId, toolName = null) => {
     message = `Session at ${toolCalls} tool calls, ${tasksCompleted} tasks completed. Consider writing a handoff and starting fresh.`;
   }
 
-  return { status, toolCalls, elapsedMin, tasksCompleted, message, spiral: spiralResult.spiral, spiralPatterns: spiralResult.patterns };
+  // Perimortem fires periodically — ask on first red, then every PERIMORTEM_INTERVAL calls
+  let perimortem = false;
+  if (status === "red") {
+    const lastAt = perimortemLastAt.get(sessionId) || 0;
+    if (toolCalls - lastAt >= PERIMORTEM_INTERVAL) {
+      perimortem = true;
+      perimortemLastAt.set(sessionId, toolCalls);
+    }
+  }
+
+  return { status, toolCalls, elapsedMin, tasksCompleted, message, perimortem, spiral: spiralResult.spiral, spiralPatterns: spiralResult.patterns };
 };
 
 // ---------------------------------------------------------------------------
