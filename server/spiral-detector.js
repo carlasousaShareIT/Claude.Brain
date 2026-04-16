@@ -66,6 +66,12 @@ export function detect(sessionId) {
     });
   }
 
+  // If spiral detected, clear the window. The spiral fired once, did its job.
+  // Next call starts fresh — no persistent nagging.
+  if (patterns.length > 0) {
+    detector.calls = [];
+  }
+
   return { spiral: patterns.length > 0, patterns };
 }
 
