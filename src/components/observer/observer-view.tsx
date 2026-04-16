@@ -3,6 +3,7 @@ import { MetricCard } from '@/components/metrics/metric-card'
 import { WatchersCard } from '@/components/observer/watchers-card'
 import { ViolationsCard } from '@/components/metrics/violations-card'
 import { AgentMetricsCard } from '@/components/metrics/agent-metrics-card'
+import { QueryError } from '@/components/ui/query-error'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Shield, ShieldOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +19,7 @@ function isRecentlyActive(lastEventAt: string | null): boolean {
 export function ObserverView() {
   const queryClient = useQueryClient()
 
-  const { data: watchers } = useQuery({
+  const { data: watchers, isLoading: watchersLoading, isError: watchersError, refetch: refetchWatchers } = useQuery({
     queryKey: ['watchers'],
     queryFn: api.getWatchers,
   })
@@ -40,6 +41,18 @@ export function ObserverView() {
       queryClient.invalidateQueries({ queryKey: ['observer-config'] })
     },
   })
+
+  if (watchersLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading observer...</p>
+      </div>
+    )
+  }
+
+  if (watchersError) {
+    return <QueryError message="Failed to load observer data." onRetry={refetchWatchers} />
+  }
 
   const liveCount = watchers?.filter((w) => isRecentlyActive(w.lastEventAt)).length ?? 0
   const violations24h = violationStats?.recent24h ?? 0

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { CalendarClock, CheckCheck, Plus } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { cn } from '@/lib/utils'
 import { useReminders } from '@/hooks/use-reminders'
 import { useProjects } from '@/hooks/use-projects'
@@ -94,7 +95,7 @@ export function RemindersView() {
   const [addDueDate, setAddDueDate] = useState('')
   const [addProject, setAddProject] = useState<string>('')
 
-  const { data: reminders, updateReminder, deleteReminder, createReminder } = useReminders(
+  const { data: reminders, isLoading, isError, refetch, updateReminder, deleteReminder, createReminder } = useReminders(
     statusFilter === 'all' ? undefined : statusFilter,
   )
   const { data: projects } = useProjects()
@@ -191,6 +192,18 @@ export function RemindersView() {
   }, [pending, updateReminder])
 
   const showDone = statusFilter === 'done' || statusFilter === 'all'
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading reminders...</p>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load reminders." onRetry={refetch} />
+  }
 
   return (
     <div className="flex h-full flex-col">

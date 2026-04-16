@@ -2,6 +2,7 @@ import { useMetrics } from '@/hooks/use-metrics'
 import { useAutoHealth } from '@/hooks/use-health'
 import { useUIStore } from '@/stores/ui-store'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { QueryError } from '@/components/ui/query-error'
 import { MetricCard } from './metric-card'
 import { SectionBreakdown } from './section-breakdown'
 import { ConfidenceSplit } from './confidence-split'
@@ -13,7 +14,7 @@ import { AuditFindingsCard } from './audit-findings-card'
 
 export function MetricsView() {
   const activeProject = useUIStore((s) => s.activeProject)
-  const { data, isLoading } = useMetrics(activeProject || undefined)
+  const { data, isLoading, isError, refetch } = useMetrics(activeProject || undefined)
   const autoHealth = useAutoHealth(true)
 
   if (isLoading) {
@@ -22,6 +23,10 @@ export function MetricsView() {
         <p className="text-sm text-muted-foreground">Loading metrics...</p>
       </div>
     )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load metrics." onRetry={refetch} />
   }
 
   if (!data) {

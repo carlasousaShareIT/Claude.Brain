@@ -5,7 +5,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { watchAgent, getActiveWatchers } from "./watcher.js";
+import { watchAgent, getActiveWatchers, STALE_WINDOW_MS } from "./watcher.js";
 
 const PREFIX = "[observer:dir-watcher]";
 
@@ -122,8 +122,11 @@ function poll(options) {
     const mtimeMs = stats.mtimeMs || stats.mtime?.getTime() || 0;
     const age = now - mtimeMs;
 
-    // Skip files older than maxAgeMs.
+    // Skip files older than maxAgeMs (broad scan window).
     if (age > options.maxAgeMs) continue;
+
+    // Don't register files that are already stale (no recent writes).
+    if (age > STALE_WINDOW_MS && !knownFiles.has(filePath)) continue;
 
     const known = knownFiles.get(filePath);
 

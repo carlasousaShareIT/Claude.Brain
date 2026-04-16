@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useMissions } from '@/hooks/use-missions'
 import { useUIStore } from '@/stores/ui-store'
+import { QueryError } from '@/components/ui/query-error'
 import { ResumeBanner } from './resume-banner'
 import { LiveActivityBar } from './live-activity-bar'
 import { MissionCard } from './mission-card'
@@ -12,6 +13,9 @@ export function MissionsView() {
 
   const {
     data: activeMissions,
+    isLoading,
+    isError,
+    refetch,
     updateMission,
     updateTask,
   } = useMissions('active', activeProject || undefined)
@@ -52,6 +56,18 @@ export function MissionsView() {
     }) => updateTask.mutate(params),
     [updateTask],
   )
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading missions...</p>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load missions." onRetry={refetch} />
+  }
 
   const active: MissionSummary[] = activeMissions ?? []
   const closed: MissionSummary[] = [

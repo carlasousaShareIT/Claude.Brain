@@ -21,10 +21,9 @@ export function AnalyticsCard({ data, onClick }: AnalyticsCardProps) {
   }
 
   const rates = Object.entries(data.compliance.rates)
-  const avgRate = rates.length > 0
-    ? rates.reduce((sum, [, r]) => sum + r.rate, 0) / rates.length
-    : 0
-  const pct = Math.round(avgRate * 100)
+  const totalPassed = rates.reduce((sum, [, r]) => sum + r.passed, 0)
+  const totalApplicable = rates.reduce((sum, [, r]) => sum + r.total, 0)
+  const pct = totalApplicable > 0 ? Math.round((totalPassed / totalApplicable) * 100) : 0
 
   return (
     <button

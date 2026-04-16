@@ -24,8 +24,8 @@ export function useDashboard() {
   })
 
   const analytics = useQuery({
-    queryKey: ['analytics', 20],
-    queryFn: () => api.getAnalyticsSummary(20),
+    queryKey: ['analytics', 30],
+    queryFn: () => api.getAnalyticsSummary(30),
   })
 
   const metrics = useQuery({

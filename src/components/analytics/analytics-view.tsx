@@ -1,13 +1,14 @@
 import { useAnalytics } from '@/hooks/use-analytics'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MetricCard } from '@/components/metrics/metric-card'
+import { QueryError } from '@/components/ui/query-error'
 import { ComplianceScorecard } from './compliance-scorecard'
 import { ViolationFeed } from './violation-feed'
 import { ProjectSplit } from './project-split'
 import { ExperimentTracker } from './experiment-tracker'
 
 export function AnalyticsView() {
-  const { data, isLoading } = useAnalytics(30)
+  const { data, isLoading, isError, refetch } = useAnalytics(30)
 
   if (isLoading) {
     return (
@@ -15,6 +16,10 @@ export function AnalyticsView() {
         <p className="text-sm text-muted-foreground">Loading analytics...</p>
       </div>
     )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load analytics." onRetry={refetch} />
   }
 
   if (!data) {

@@ -9,7 +9,7 @@ import { MissionTaskRow } from './mission-task-row'
 import { AgentTimeline } from './agent-timeline'
 import { cn, timeAgo, projectColor } from '@/lib/utils'
 import { api } from '@/lib/api'
-import type { MissionSummary, Task } from '@/lib/types'
+import type { MissionSummary, MissionNote, Task } from '@/lib/types'
 
 interface MissionCardProps {
   mission: MissionSummary
@@ -57,6 +57,32 @@ function PhaseSection({
               missionId={missionId}
               onUpdateTask={onUpdateTask}
             />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotesSection({ notes }: { notes: MissionNote[] }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div>
+      <button
+        className="flex items-center gap-1 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#62627a] hover:text-muted-foreground"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {expanded ? <ChevronDown className="size-2.5" /> : <ChevronRight className="size-2.5" />}
+        Notes
+        <span className="font-normal">({notes.length})</span>
+      </button>
+      {expanded && (
+        <div className="space-y-1.5 pl-1 pt-1">
+          {notes.map((note) => (
+            <div key={note.id} className="text-xs text-muted-foreground">
+              <p className="whitespace-pre-wrap leading-relaxed">{note.text}</p>
+              <span className="text-[10px] text-[#62627a]">{timeAgo(note.createdAt)}</span>
+            </div>
           ))}
         </div>
       )}
@@ -230,6 +256,11 @@ export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdate
 
           {/* Agent execution timeline */}
           <AgentTimeline tasks={tasks} />
+
+          {/* Notes */}
+          {fullMission?.notes && fullMission.notes.length > 0 && (
+            <NotesSection notes={fullMission.notes} />
+          )}
         </CardContent>
       )}
     </Card>

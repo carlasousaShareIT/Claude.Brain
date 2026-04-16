@@ -30,6 +30,7 @@ export function useBrain(project?: string) {
     mutationFn: api.setConfidence,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brain'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
     },
   });
 

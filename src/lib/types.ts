@@ -48,6 +48,7 @@ export interface Task {
   sessionId: string | null;
   output: string | null;
   blockers: string[];
+  blockedBy: string[];
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -66,6 +67,7 @@ export interface Mission {
   id: string;
   name: string;
   project: string | null;
+  experimentId: string | null;
   status: 'active' | 'completed' | 'abandoned';
   createdAt: string;
   createdInSession: string | null;

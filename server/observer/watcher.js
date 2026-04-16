@@ -323,9 +323,21 @@ export const unwatchAgent = (sessionId, agentName) => {
   return { metrics: savedMetrics };
 };
 
+export const STALE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes — matches frontend LIVE_WINDOW_MS
+
 export const getActiveWatchers = () => {
   const result = [];
+  const stale = [];
+  const cutoff = Date.now() - STALE_WINDOW_MS;
+
   for (const [key, entry] of watchers) {
+    const lastEvent = entry.lastEventAt();
+    const lastActivity = lastEvent ? new Date(lastEvent).getTime()
+      : new Date(entry.startedAt).getTime();
+    if (lastActivity < cutoff) {
+      stale.push({ sessionId: entry.sessionId, agentName: entry.agentName });
+      continue;
+    }
     result.push({
       key,
       sessionId: entry.sessionId,
@@ -338,9 +350,15 @@ export const getActiveWatchers = () => {
       currentMetrics: entry.engine.getMetrics(),
       totalEvents: entry.totalEvents(),
       unknownEvents: entry.unknownEvents(),
-      lastEventAt: entry.lastEventAt(),
+      lastEventAt: lastEvent,
     });
   }
+
+  // Clean up stale watchers outside the iteration
+  for (const { sessionId, agentName } of stale) {
+    unwatchAgent(sessionId, agentName);
+  }
+
   return result;
 };
 

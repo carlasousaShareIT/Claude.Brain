@@ -37,7 +37,7 @@ export function useMissions(status?: string, project?: string) {
       tasks,
     }: {
       missionId: string;
-      tasks: Array<{ description: string }>;
+      tasks: Array<{ description: string; title?: string; blockedBy?: string[] }>;
     }) => api.addTasks(missionId, { tasks }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['missions'] });

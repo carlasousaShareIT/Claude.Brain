@@ -29,6 +29,7 @@ import type {
   ObserverConfig,
   AgentMetricsSummary,
   ObserverWatcher,
+  Task,
   AnalyticsSummary,
 } from '@/lib/types';
 
@@ -210,7 +211,7 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/missions/${id}`, { method: 'DELETE' }),
 
   addTasks: (missionId: string, body: { tasks: Array<{ description: string; title?: string; blockedBy?: string[] }> }) =>
-    apiFetch<Array<{ id: string; description: string; status: string; blockedBy: string[] }>>(`/missions/${missionId}/tasks`, { method: 'POST', body: body as unknown as BodyInit }),
+    apiFetch<Task[]>(`/missions/${missionId}/tasks`, { method: 'POST', body: body as unknown as BodyInit }),
 
   updateTask: (
     missionId: string,
@@ -225,7 +226,7 @@ export const api = {
       title?: string;
     },
   ) =>
-    apiFetch<Mission>(`/missions/${missionId}/tasks/${taskId}`, {
+    apiFetch<Task & { unblockedTasks: Task[] }>(`/missions/${missionId}/tasks/${taskId}`, {
       method: 'PATCH',
       body: body as unknown as BodyInit,
     }),

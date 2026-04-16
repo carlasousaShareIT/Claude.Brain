@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { cn } from '@/lib/utils'
 import { useExperiments } from '@/hooks/use-experiments'
 import { ExperimentCard } from './experiment-card'
@@ -20,7 +21,7 @@ export function ExperimentsView() {
   const [addName, setAddName] = useState('')
   const [addHypothesis, setAddHypothesis] = useState('')
 
-  const { data: experiments, createExperiment, updateExperiment, addObservation, deleteExperiment } = useExperiments(
+  const { data: experiments, isLoading, isError, refetch, createExperiment, updateExperiment, addObservation, deleteExperiment } = useExperiments(
     statusFilter === 'all' ? undefined : statusFilter,
   )
 
@@ -72,6 +73,18 @@ export function ExperimentsView() {
     },
     [handleAddSubmit],
   )
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading experiments...</p>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load experiments." onRetry={refetch} />
+  }
 
   const list = experiments ?? []
 

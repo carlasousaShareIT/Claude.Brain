@@ -7,6 +7,7 @@ import { getDb } from "./db.js";
 import { slugify, tokenize, similarity } from "./text-utils.js";
 import { detectSection, normalizeProject, entryText, getEntryProjects, filterByProject } from "./entry-utils.js";
 import { sanitizePrompt } from "./sanitize.js";
+import { calculateGates, calculateScore, accumulateRates } from "./compliance-utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2374,26 +2375,15 @@ export const getSessionCompliance = (sessionId) => {
     "SELECT activity_type, details FROM session_activity WHERE session_id = ?"
   ).all(sessionId);
 
-  const brainQueried = activities.some(a => a.activity_type === "brain_query");
-  const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
-  const profilesInjected = activities
-    .filter(a => a.activity_type === "profile_inject")
-    .map(a => a.details)
-    .filter(Boolean);
-  const commitCount = activities.filter(a => a.activity_type === "commit").length;
-  const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
+  const { gates, brainQueried, reviewerRan, profilesInjected, commitCount, agentSpawnCount } = calculateGates(activities);
 
   return {
     brainQueried,
     reviewerRan,
-    profilesInjected: [...new Set(profilesInjected)],
+    profilesInjected: [...new Set(profilesInjected.map(a => a.details).filter(Boolean))],
     commitCount,
     agentSpawnCount,
-    checks: {
-      brain_query_gate: brainQueried ? "pass" : "fail",
-      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
-      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
-    },
+    checks: gates,
   };
 };
 
@@ -2412,39 +2402,24 @@ export const getSessionsHealth = (limit = 20) => {
   };
   const trend = [];
 
+  const sessionIds = sessions.map(s => s.id);
+  const allActivities = sessionIds.length > 0
+    ? db.prepare(
+        `SELECT session_id, activity_type, details FROM session_activity WHERE session_id IN (${sessionIds.map(() => "?").join(",")})`
+      ).all(...sessionIds)
+    : [];
+  const activitiesBySession = {};
+  for (const a of allActivities) {
+    if (!activitiesBySession[a.session_id]) activitiesBySession[a.session_id] = [];
+    activitiesBySession[a.session_id].push(a);
+  }
+
   for (const s of sessions) {
-    const activities = db.prepare(
-      "SELECT activity_type, details FROM session_activity WHERE session_id = ?"
-    ).all(s.id);
+    const activities = activitiesBySession[s.id] || [];
 
-    const brainQueried = activities.some(a => a.activity_type === "brain_query");
-    const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
-    const profilesInjected = activities.filter(a => a.activity_type === "profile_inject");
-    const commitCount = activities.filter(a => a.activity_type === "commit").length;
-    const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
-
-    const gates = {
-      brain_query_gate: brainQueried ? "pass" : "fail",
-      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
-      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
-    };
-
-    // Accumulate rates
-    rates.brain_query.total++;
-    if (gates.brain_query_gate === "pass") rates.brain_query.passed++;
-
-    rates.agent_profile.total++;
-    if (gates.agent_profile_gate === "pass") rates.agent_profile.passed++;
-
-    if (gates.reviewer_gate !== "not_applicable") {
-      rates.reviewer.total++;
-      if (gates.reviewer_gate === "pass") rates.reviewer.passed++;
-    }
-
-    // Score: pass count / applicable count
-    const applicable = Object.values(gates).filter(v => v !== "not_applicable");
-    const passCount = applicable.filter(v => v === "pass").length;
-    const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+    const { gates } = calculateGates(activities);
+    accumulateRates(rates, gates);
+    const score = calculateScore(gates);
 
     trend.push({
       sessionId: s.id,
@@ -2501,17 +2476,7 @@ export const getSessionHealth = (sessionId) => {
     "SELECT activity_type, details, created_at FROM session_activity WHERE session_id = ? ORDER BY created_at ASC"
   ).all(sessionId);
 
-  const brainQueried = activities.some(a => a.activity_type === "brain_query");
-  const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
-  const profilesInjected = activities.filter(a => a.activity_type === "profile_inject");
-  const commitCount = activities.filter(a => a.activity_type === "commit").length;
-  const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
-
-  const gates = {
-    brain_query_gate: brainQueried ? "pass" : "fail",
-    agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
-    reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
-  };
+  const { gates, commitCount, agentSpawnCount } = calculateGates(activities);
 
   const activityCounts = {
     brain_query: 0, brain_write: 0, profile_inject: 0,
@@ -2521,9 +2486,7 @@ export const getSessionHealth = (sessionId) => {
     if (a.activity_type in activityCounts) activityCounts[a.activity_type]++;
   }
 
-  const applicable = Object.values(gates).filter(v => v !== "not_applicable");
-  const passCount = applicable.filter(v => v === "pass").length;
-  const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+  const score = calculateScore(gates);
 
   const timeline = activities.map(a => ({
     type: a.activity_type,
@@ -2900,35 +2863,9 @@ export const getAnalyticsSummary = (limit = 30) => {
   for (const s of sessions) {
     const activities = activitiesBySession[s.id] || [];
 
-    const brainQueried = activities.some(a => a.activity_type === "brain_query");
-    const reviewerRan = activities.some(a => a.activity_type === "reviewer_run");
-    const profilesInjected = activities
-      .filter(a => a.activity_type === "profile_inject")
-      .map(a => a.details)
-      .filter(Boolean);
-    const commitCount = activities.filter(a => a.activity_type === "commit").length;
-    const agentSpawnCount = activities.filter(a => a.activity_type === "agent_spawn").length;
-
-    const gates = {
-      brain_query_gate: brainQueried ? "pass" : "fail",
-      agent_profile_gate: profilesInjected.length > 0 || agentSpawnCount === 0 ? "pass" : "fail",
-      reviewer_gate: commitCount === 0 ? "not_applicable" : (reviewerRan ? "pass" : "fail"),
-    };
-
-    rates.brain_query.total++;
-    if (gates.brain_query_gate === "pass") rates.brain_query.passed++;
-
-    rates.agent_profile.total++;
-    if (gates.agent_profile_gate === "pass") rates.agent_profile.passed++;
-
-    if (gates.reviewer_gate !== "not_applicable") {
-      rates.reviewer.total++;
-      if (gates.reviewer_gate === "pass") rates.reviewer.passed++;
-    }
-
-    const applicable = Object.values(gates).filter(v => v !== "not_applicable");
-    const passCount = applicable.filter(v => v === "pass").length;
-    const score = applicable.length > 0 ? Math.round((passCount / applicable.length) * 100) / 100 : 1.0;
+    const { gates } = calculateGates(activities);
+    accumulateRates(rates, gates);
+    const score = calculateScore(gates);
 
     complianceSessions.push({
       sessionId: s.id,

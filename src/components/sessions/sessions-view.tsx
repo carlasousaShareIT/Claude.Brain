@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Calendar, FolderOpen, X } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { cn } from '@/lib/utils'
 import { useSessions } from '@/hooks/use-sessions'
 import { useProjects } from '@/hooks/use-projects'
@@ -45,7 +46,7 @@ function matchesProjectFilter(session: SessionSummary, projectId: string): boole
 }
 
 export function SessionsView() {
-  const { data: sessions, isLoading } = useSessions()
+  const { data: sessions, isLoading, isError, refetch } = useSessions()
   const { data: projects } = useProjects()
   const sessionFilterId = useUIStore((s) => s.sessionFilterId)
   const setSessionFilterId = useUIStore((s) => s.setSessionFilterId)
@@ -88,6 +89,10 @@ export function SessionsView() {
         <p className="text-sm text-[#62627a]">Loading sessions...</p>
       </div>
     )
+  }
+
+  if (isError) {
+    return <QueryError message="Failed to load sessions." onRetry={refetch} />
   }
 
   if (!sessions || sessions.length === 0) {
