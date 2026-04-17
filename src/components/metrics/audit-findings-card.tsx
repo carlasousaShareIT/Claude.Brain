@@ -227,7 +227,7 @@ function FindingRow({
                   Promote
                 </Button>
               )}
-              {(finding.type === 'stale' || finding.type === 'noise') && !isDismissed && (
+              {(finding.type === 'stale' || finding.type === 'noise' || finding.type === 'promotable') && !isDismissed && (
                 <Button
                   variant="ghost"
                   size="xs"

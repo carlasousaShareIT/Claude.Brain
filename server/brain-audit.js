@@ -30,14 +30,14 @@ function findDuplicates() {
   for (let i = 0; i < all.length; i++) {
     for (let j = i + 1; j < all.length; j++) {
       const sim = combinedSimilarity(all[i].text, all[j].text);
-      const pairKey = `${all[i].id}-${all[j].id}`;
+      const pairKey = `${all[i].section}-${all[i].id}__${all[j].section}-${all[j].id}`;
 
       if (sim >= 0.45) {
         if (seen.has(pairKey)) continue;
         seen.add(pairKey);
 
         findings.push({
-          id: `duplicate-${all[i].id}-${all[j].id}`,
+          id: `duplicate-${pairKey}`,
           type: "duplicate",
           severity: "warning",
           section: all[i].section,
@@ -60,7 +60,7 @@ function findDuplicates() {
           seen.add(pairKey);
 
           findings.push({
-            id: `duplicate-${all[i].id}-${all[j].id}`,
+            id: `duplicate-${pairKey}`,
             type: "duplicate",
             severity: "warning",
             section: all[i].section,
@@ -89,7 +89,7 @@ function findStaleEntries() {
 
   for (const e of staleEntries) {
     findings.push({
-      id: `stale-${e.id}`,
+      id: `stale-${e.section}-${e.id}`,
       type: "stale",
       severity: "info",
       section: e.section,
@@ -106,7 +106,7 @@ function findStaleEntries() {
 
   for (const d of staleDecisions) {
     findings.push({
-      id: `stale-${d.id}`,
+      id: `stale-decisions-${d.id}`,
       type: "stale",
       severity: "info",
       section: "decisions",
@@ -160,7 +160,7 @@ function findNoiseEntries() {
 
     if (reasons.length > 0) {
       findings.push({
-        id: `noise-${e.id}`,
+        id: `noise-${e.section}-${e.id}`,
         type: "noise",
         severity: "info",
         section: e.section,
@@ -193,7 +193,7 @@ function findPromotableDecisions() {
     }
     if (!hasMatch) {
       findings.push({
-        id: `promotable-${d.id}`,
+        id: `promotable-decisions-${d.id}`,
         type: "promotable",
         severity: "info",
         section: "decisions",
@@ -213,7 +213,7 @@ function findAgingDecisions() {
   ).all();
 
   return aging.map(d => ({
-    id: `aging_decision-${d.id}`,
+    id: `aging_decision-decisions-${d.id}`,
     type: "aging_decision",
     severity: "warning",
     section: "decisions",
