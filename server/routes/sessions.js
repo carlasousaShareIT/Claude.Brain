@@ -20,9 +20,20 @@ router.post("/start", (req, res) => {
 // POST /:id/end — record session end with optional handoff
 router.post("/:id/end", (req, res) => {
   const { handoff } = req.body || {};
+  const existing = getSessionById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Session not found" });
+
+  if (existing.ended_at) {
+    // Session already ended — update handoff if provided, 409 otherwise
+    if (!handoff) return res.status(409).json({ error: `Session ${req.params.id} already ended at ${existing.ended_at}` });
+    const updated = updateSessionHandoff(req.params.id, handoff);
+    broadcastEvent("session:handoff-updated", { id: req.params.id, ts: new Date().toISOString() });
+    console.log(`[brain] session:handoff-updated ${req.params.id} (via end, session already ended)`);
+    return res.json(updated);
+  }
+
+  // Session open — end it with full side effects
   const session = endSession(req.params.id, { handoff });
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.error === "already_ended") return res.status(409).json({ error: session.message });
 
   // Unwatch all agents for this session
   const unwatchResults = unwatchAllForSession(req.params.id);
