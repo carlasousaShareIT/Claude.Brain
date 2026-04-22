@@ -276,6 +276,178 @@ These are the key behaviors the CLAUDE.md instructions should produce. Claude wi
 - **Observer.** `POST /observer/watch` to monitor a session's JSONL for stuck/spiral patterns. `GET /observer/stuck` to check for currently stuck agents. Violations are stored and surfaceable in the dashboard.
 - **Compliance.** `GET /sessions/:id/compliance` checks enforcement gates (brain_query, agent_profile, reviewer). Used by hooks to gate commits and PRs.
 
+## Integrating with Codex
+
+Codex reads repo instructions from `AGENTS.md`. To enable the brain in Codex, add a project-level `AGENTS.md` at the repo root, or extend the existing one, with the startup, context, mission, and handoff rules you want Codex to follow.
+
+Codex should be instructed to:
+
+- Create a new `sessionId` UUID at session start.
+- Pick a short `sessionLabel` from the user request.
+- Set `projectId` based on the repo being worked in.
+- Call `POST /sessions/startup` before non-trivial work.
+- Read and apply the startup response before acting.
+- Use `/memory`, `/missions`, and `/sessions/:id/end` for durable cross-session state.
+- Continue normally if the brain server is unavailable.
+
+### Minimal `AGENTS.md` example for Codex
+
+```md
+# Codex Brain Integration
+
+Codex should use the local brain server at session start and throughout the session for continuity, context, missions, and handoff.
+
+## Brain server
+
+- Base URL: `http://localhost:7777`.
+- Default project: `general`.
+- If the server is unavailable or times out, continue normally without blocking the user.
+
+## Session variables
+
+At the beginning of each session, set:
+
+- `sessionId`: a new UUID.
+- `sessionLabel`: a short label based on the user request.
+- `projectId`: current brain project.
+
+Project selection:
+- use `brain-app` when working inside `brain-app/`.
+- otherwise use `general` unless another known project is clearly a better match.
+
+## Mandatory startup
+
+Before non-trivial work, Codex must call `POST /sessions/startup`.
+
+PowerShell pattern:
+
+```powershell
+$sessionId = [guid]::NewGuid().ToString()
+$sessionLabel = "short task label"
+$projectId = "general"
+
+$body = @{
+  sessionId = $sessionId
+  label = $sessionLabel
+  project = $projectId
+} | ConvertTo-Json
+
+$startup = Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/sessions/startup" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Then read and apply `$startup.Content`.
+
+The startup response is load-bearing. It contains:
+- previous handoff.
+- compact brain context.
+- resumable missions.
+- pending reminders.
+- compliance state.
+
+Do not just fetch it. Read it and identify the rules that apply before acting.
+
+## Brain reads
+
+Before non-trivial work, fetch compact project context:
+
+```powershell
+$context = Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/memory/context?format=compact&project=$projectId"
+```
+
+Useful supporting reads:
+
+```powershell
+$handoff = Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/sessions/latest/handoff?project=$projectId"
+
+$missions = Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/missions/resume?project=$projectId"
+```
+
+## Brain writes
+
+Write durable cross-session information to the brain, not to local memory files.
+
+```powershell
+$body = @{
+  section = "decisions"
+  action = "add"
+  value = "Decision text."
+  project = $projectId
+  sessionId = $sessionId
+} | ConvertTo-Json
+
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/memory" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Use `POST /memory/check` before writing architecture or decision entries. Use `POST /memory/batch` for multiple writes.
+
+## Missions
+
+For multi-step work, create and maintain a mission with `POST /missions`. Update task state with `PATCH /missions/<mission-id>/tasks/<task-id>` as work progresses.
+
+## Subagents
+
+If Codex uses subagents for non-trivial work, inject brain context into them first:
+
+```powershell
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/memory/profiles/resolve?agentType=<agent-type>"
+```
+
+Then fetch the resolved profile context, or fall back to:
+
+```powershell
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/memory/context?format=compact&project=$projectId"
+```
+
+## Wrap-up
+
+At the end of the session, send a handoff:
+
+```powershell
+$body = @{
+  handoff = @{
+    done = @("Completed item.")
+    remaining = @("Next item.")
+    blocked = @()
+    decisions = @("Decision made.")
+  }
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://localhost:7777/sessions/$sessionId/end" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body $body
+```
+```
+
+### Codex notes
+
+- `AGENTS.md` is the Codex equivalent of `CLAUDE.md`.
+- Put the instructions at the repo root so Codex sees them immediately.
+- Keep the startup call near the top of the instructions so Codex performs it before deeper work.
+- If you already have an `AGENTS.md`, merge the brain section into it rather than creating a competing file.
+
 ## Dashboard
 
 The dashboard at `http://localhost:5173` (dev) or `http://localhost:7777` (production) provides:
