@@ -8,10 +8,11 @@ interface MissionProgressProps {
 export function MissionProgress({ tasks }: MissionProgressProps) {
   const segments = useMemo(() => {
     const total = tasks.length
-    if (total === 0) return { completed: 0, inProgress: 0, blocked: 0, interrupted: 0, pending: 100 }
+    if (total === 0) return { completed: 0, reviewed: 0, inProgress: 0, blocked: 0, interrupted: 0, pending: 100 }
 
     return {
       completed: (tasks.filter((t) => t.status === 'completed').length / total) * 100,
+      reviewed: (tasks.filter((t) => t.status === 'reviewed').length / total) * 100,
       inProgress: (tasks.filter((t) => t.status === 'in_progress').length / total) * 100,
       blocked: (tasks.filter((t) => t.status === 'blocked').length / total) * 100,
       interrupted: (tasks.filter((t) => t.status === 'interrupted').length / total) * 100,
@@ -25,6 +26,12 @@ export function MissionProgress({ tasks }: MissionProgressProps) {
         <div
           className="bg-brain-green transition-all"
           style={{ width: `${segments.completed}%` }}
+        />
+      )}
+      {segments.reviewed > 0 && (
+        <div
+          className="bg-brain-cyan transition-all"
+          style={{ width: `${segments.reviewed}%` }}
         />
       )}
       {segments.inProgress > 0 && (

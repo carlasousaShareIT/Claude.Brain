@@ -4,6 +4,7 @@ import type { Task } from '@/lib/types'
 
 const STATUS_COLORS: Record<Task['status'], string> = {
   completed: '#34d399',
+  reviewed: '#06b6d4',
   in_progress: '#22d3ee',
   blocked: '#fbbf24',
   interrupted: '#f59e0b',
@@ -13,6 +14,7 @@ const STATUS_COLORS: Record<Task['status'], string> = {
 
 const STATUS_ICONS: Record<Task['status'], string> = {
   completed: '✓',
+  reviewed: '◎',
   in_progress: '▶',
   blocked: '!',
   interrupted: '⏸',

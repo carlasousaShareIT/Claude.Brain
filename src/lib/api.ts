@@ -23,6 +23,7 @@ import type {
   Experiment,
   ExperimentSummary,
   Observation,
+  Skill,
   AuditReport,
   ObserverViolation,
   ViolationStats,
@@ -286,6 +287,21 @@ export const api = {
 
   deleteExperiment: (id: string) =>
     apiFetch<{ ok: boolean }>(`/experiments/${id}`, { method: 'DELETE' }),
+
+  // Skills
+  listSkills: (params?: { project?: string; type?: string }) =>
+    apiFetch<Skill[]>(`/skills${qs({ project: params?.project, type: params?.type })}`),
+
+  getSkill: (id: string) => apiFetch<Skill>(`/skills/${id}`),
+
+  createSkill: (body: { name: string; type: string; content: string; project?: string[]; tags?: string[] }) =>
+    apiFetch<Skill>('/skills', { method: 'POST', body: body as unknown as BodyInit }),
+
+  updateSkill: (id: string, body: { name?: string; type?: string; content?: string; project?: string[]; tags?: string[] }) =>
+    apiFetch<Skill>(`/skills/${id}`, { method: 'PATCH', body: body as unknown as BodyInit }),
+
+  deleteSkill: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' }),
 
   getExperimentEffectiveness: (id: string) =>
     apiFetch<{

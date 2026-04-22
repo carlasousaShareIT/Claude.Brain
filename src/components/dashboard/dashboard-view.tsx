@@ -4,13 +4,14 @@ import { MissionsCard } from './missions-card'
 import { SessionsCard } from './sessions-card'
 import { RemindersCard } from './reminders-card'
 import { ExperimentsCard } from './experiments-card'
+import { SkillsCard } from './skills-card'
 import { AnalyticsCard } from './analytics-card'
 import { HealthCard } from './health-card'
 import { ObserverCard } from './observer-card'
 
 export function DashboardView() {
   const pushView = useUIStore((s) => s.pushView)
-  const { missions, sessions, reminders, experiments, analytics, metrics, watchers, violationStats } = useDashboard()
+  const { missions, sessions, reminders, experiments, skills, analytics, metrics, watchers, violationStats } = useDashboard()
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -19,6 +20,7 @@ export function DashboardView() {
           <SessionsCard data={sessions.data} onClick={() => pushView('sessions')} />
           <RemindersCard data={reminders.data} onClick={() => pushView('reminders')} />
           <ExperimentsCard data={experiments.data} onClick={() => pushView('experiments')} />
+          <SkillsCard data={skills.data} onClick={() => pushView('skills')} />
           <AnalyticsCard data={analytics.data} onClick={() => pushView('analytics')} />
           <HealthCard data={metrics.data} onClick={() => pushView('metrics')} />
           <ObserverCard watchers={watchers.data} stats={violationStats.data} onClick={() => pushView('observer')} />

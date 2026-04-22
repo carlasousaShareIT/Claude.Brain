@@ -16,9 +16,10 @@ export function MissionsCard({ data, onClick }: MissionsCardProps) {
   const active = data?.filter((m) => m.status === 'active') ?? []
   const totalPending = active.reduce((sum, m) => sum + m.taskCounts.pending, 0)
   const totalInProgress = active.reduce((sum, m) => sum + m.taskCounts.in_progress, 0)
+  const totalReviewed = active.reduce((sum, m) => sum + (m.taskCounts.reviewed ?? 0), 0)
   const totalCompleted = active.reduce((sum, m) => sum + m.taskCounts.completed, 0)
   const totalBlocked = active.reduce((sum, m) => sum + m.taskCounts.blocked, 0)
-  const totalTasks = totalPending + totalInProgress + totalCompleted + totalBlocked
+  const totalTasks = totalPending + totalInProgress + totalReviewed + totalCompleted + totalBlocked
 
   return (
     <button

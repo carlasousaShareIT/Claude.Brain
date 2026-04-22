@@ -627,6 +627,73 @@ const createSchema = (db) => {
     console.log("[brain-db] migrated: heartbeat columns + profile agent_types (v2.2.0)");
   }
 
+  // Schema migration: add skills table (v2.3.0)
+  const skillsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='skills'").get();
+  if (!skillsTableExists) {
+    db.exec(`
+      CREATE TABLE skills (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT,
+        content TEXT NOT NULL,
+        project TEXT DEFAULT '["general"]',
+        tags TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_skills_project ON skills(project);
+      CREATE INDEX idx_skills_type ON skills(type);
+    `);
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "2.3.0");
+    console.log("[brain-db] migrated: added skills table (v2.3.0)");
+  }
+
+  // Schema migration: add reviewed status + reviewed_at column to mission_tasks (v2.4.0)
+  const taskCols240 = db.prepare("PRAGMA table_info(mission_tasks)").all().map(c => c.name);
+  if (!taskCols240.includes("reviewed_at")) {
+    // Add reviewed_at column
+    db.exec("ALTER TABLE mission_tasks ADD COLUMN reviewed_at TEXT");
+    console.log("[brain-db] migrated mission_tasks: added reviewed_at column");
+
+    // Recreate mission_tasks to update CHECK constraint (add 'reviewed' status)
+    const currentCheck240 = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='mission_tasks'"
+    ).get();
+    if (currentCheck240 && !currentCheck240.sql.includes("'reviewed'")) {
+      db.exec(`
+        CREATE TABLE mission_tasks_new (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+          description TEXT NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'reviewed', 'completed', 'blocked', 'interrupted', 'verification_failed')),
+          assigned_agent TEXT,
+          session_id TEXT,
+          output TEXT,
+          blockers TEXT DEFAULT '[]',
+          blocked_by TEXT DEFAULT '[]',
+          title TEXT,
+          phase TEXT,
+          verification_command TEXT,
+          verification_result TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          started_at TEXT,
+          completed_at TEXT,
+          reviewed_at TEXT
+        );
+        INSERT INTO mission_tasks_new SELECT id, mission_id, description, status, assigned_agent, session_id, output, blockers, blocked_by, title, phase, verification_command, verification_result, created_at, started_at, completed_at, reviewed_at FROM mission_tasks;
+        DROP TABLE mission_tasks;
+        ALTER TABLE mission_tasks_new RENAME TO mission_tasks;
+        CREATE INDEX idx_mission_tasks_mission_id ON mission_tasks(mission_id);
+        CREATE INDEX idx_mission_tasks_status ON mission_tasks(status);
+        CREATE INDEX idx_mission_tasks_assigned_agent ON mission_tasks(assigned_agent);
+      `);
+      console.log("[brain-db] migrated mission_tasks: recreated with 'reviewed' in CHECK constraint");
+    }
+
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "2.4.0");
+    console.log("[brain-db] schema version updated to 2.4.0");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {

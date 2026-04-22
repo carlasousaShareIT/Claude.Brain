@@ -25,7 +25,7 @@ import {
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
 
 const VALID_MISSION_STATUSES = new Set(["active", "completed", "abandoned"]);
-const VALID_TASK_STATUSES = new Set(["pending", "in_progress", "completed", "blocked", "interrupted", "verification_failed"]);
+const VALID_TASK_STATUSES = new Set(["pending", "in_progress", "reviewed", "completed", "blocked", "interrupted", "verification_failed"]);
 
 const router = Router();
 
@@ -205,6 +205,11 @@ router.patch("/:id/tasks/:taskId", (req, res) => {
   // Quality gate: verification required but not provided
   if (result.verificationRequired) {
     return res.status(422).json({ error: "Task has a verificationCommand — verificationResult is required when completing" });
+  }
+
+  // Quality gate: review required before completing
+  if (result.reviewRequired) {
+    return res.status(400).json({ error: "Task must be reviewed first, or provide verificationResult with exitCode 0. Set status to 'reviewed' before completing." });
   }
 
   const { task, missionAutoCompleted, unblockedTasks, autoObservations } = result;

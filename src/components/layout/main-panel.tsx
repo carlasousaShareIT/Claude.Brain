@@ -8,6 +8,7 @@ import { NeuralMapView } from '@/components/neural-map/neural-map-view'
 import { SessionsView } from '@/components/sessions/sessions-view'
 import { RemindersView } from '@/components/reminders/reminders-view'
 import { ExperimentsView } from '@/components/experiments/experiments-view'
+import { SkillsView } from '@/components/skills/skills-view'
 import { ObserverView } from '@/components/observer/observer-view'
 import { ObserverStrip } from '@/components/observer/observer-strip'
 import { AnalyticsView } from '@/components/analytics/analytics-view'
@@ -29,6 +30,7 @@ export function MainPanel() {
         {activeView === 'sessions' && <SessionsView />}
         {activeView === 'reminders' && <RemindersView />}
         {activeView === 'experiments' && <ExperimentsView />}
+        {activeView === 'skills' && <SkillsView />}
         {activeView === 'observer' && <ObserverView />}
         {activeView === 'analytics' && <AnalyticsView />}
       </div>

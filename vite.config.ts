@@ -17,6 +17,7 @@ export default defineConfig({
       '/missions': 'http://localhost:7777',
       '/reminders': 'http://localhost:7777',
       '/experiments': 'http://localhost:7777',
+      '/skills': 'http://localhost:7777',
       '/sessions': 'http://localhost:7777',
       '/audit': 'http://localhost:7777',
       '/observer': 'http://localhost:7777',

@@ -127,7 +127,7 @@ export function MissionCard({ mission, onComplete, onAbandon, onReopen, onUpdate
 
   const hasPhases = phaseGroups.length > 1 || (phaseGroups.length === 1 && phaseGroups[0].phase !== '')
 
-  const totalTasks = mission.taskCounts.pending + mission.taskCounts.in_progress + mission.taskCounts.completed + mission.taskCounts.blocked + (mission.taskCounts.interrupted || 0)
+  const totalTasks = mission.taskCounts.pending + mission.taskCounts.in_progress + (mission.taskCounts.reviewed ?? 0) + mission.taskCounts.completed + mission.taskCounts.blocked + (mission.taskCounts.interrupted || 0)
   const completedCount = mission.taskCounts.completed
   const pct = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0
 

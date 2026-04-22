@@ -41,6 +41,11 @@ const HELP_CONTENT: Record<DetailView, TabHelpContent> = {
     claudeUses: 'Creates experiments when users say "let\'s try X." Records observations after relevant tasks. Auto-generates observations from mission metrics on mission completion. The effectiveness endpoint analyzes sentiment trends.',
     howToRead: 'Active experiments collect observations with positive/negative/neutral sentiment. The effectiveness panel shows trend direction and suggests concluding when signal is clear (10+ observations, 80%+ one sentiment).',
   },
+  skills: {
+    purpose: 'Reusable skills library. Skills are named procedures, patterns, or guidelines the agent should follow — writing style, orchestration steps, review discipline — stored once and injected into context per project.',
+    claudeUses: 'The /memory/context endpoint includes a Skills section filtered by project. Skills tagged general bleed into every project query so cross-cutting rules apply everywhere. Claude reads these at session start alongside architecture and agent rules.',
+    howToRead: 'Filter by project and type. Each skill has a name, type, and content body. Expand a card to see the full text. General-tagged skills appear in every project; project-tagged skills stay scoped.',
+  },
   observer: {
     purpose: 'Real-time observer dashboard. Monitors live agent sessions via JSONL file tailing, tracks violations, and shows agent execution metrics.',
     claudeUses: 'The observer watches agent JSONL log files (source of truth). Directory watcher auto-registers new agents. SubagentStart/Stop hooks enrich watcher entries with real agent types. Violations are passive (calibrating) — collecting data before promoting to active enforcement.',

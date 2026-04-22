@@ -8,6 +8,7 @@ const VIEWS: { key: DetailView; label: string }[] = [
   { key: 'sessions', label: 'Sessions' },
   { key: 'reminders', label: 'Reminders' },
   { key: 'experiments', label: 'Experiments' },
+  { key: 'skills', label: 'Skills' },
   { key: 'observer', label: 'Observer' },
   { key: 'neural', label: 'Neural Map' },
 ]

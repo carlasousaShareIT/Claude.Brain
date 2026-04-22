@@ -42,7 +42,7 @@ export interface Task {
   id: string;
   title: string | null;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'interrupted' | 'verification_failed';
+  status: 'pending' | 'in_progress' | 'reviewed' | 'completed' | 'blocked' | 'interrupted' | 'verification_failed';
   phase: string | null;
   assignedAgent: string | null;
   sessionId: string | null;
@@ -132,6 +132,17 @@ export interface ExperimentSummary {
   sentimentBreakdown: { positive: number; negative: number; neutral: number };
 }
 
+export interface Skill {
+  id: string;
+  name: string;
+  type: string;
+  content: string;
+  project: string[];
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Brain {
   workingStyle: BrainEntry[];
   architecture: BrainEntry[];
@@ -190,6 +201,7 @@ export interface MissionSummary {
   taskCounts: {
     pending: number;
     in_progress: number;
+    reviewed: number;
     completed: number;
     blocked: number;
     interrupted: number;

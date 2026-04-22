@@ -26,6 +26,7 @@ export const SIM_THRESHOLD = 0.15;
 export const TASK_STATUS_ICONS: Record<string, { icon: string; cls: string }> = {
   pending: { icon: '○', cls: 'pending' },
   in_progress: { icon: '▶', cls: 'in_progress' },
+  reviewed: { icon: '◎', cls: 'reviewed' },
   completed: { icon: '✓', cls: 'completed' },
   blocked: { icon: '!', cls: 'blocked' },
   interrupted: { icon: '⏸', cls: 'interrupted' },

@@ -77,6 +77,7 @@ const rowToTask = (row) => ({
   createdAt: row.created_at || null,
   startedAt: row.started_at || null,
   completedAt: row.completed_at || null,
+  reviewedAt: row.reviewed_at || null,
 });
 
 
@@ -112,6 +113,17 @@ const rowToObservation = (row) => ({
   source: row.source || "claude-session",
   createdAt: row.created_at || null,
 });
+
+const rowToSkill = (row) => row ? {
+  id: row.id,
+  name: row.name,
+  type: row.type,
+  content: row.content,
+  project: parseJson(row.project, ["general"]),
+  tags: parseJson(row.tags, []),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+} : null;
 
 const rowToProfile = (row) => ({
   id: row.id,
@@ -704,6 +716,7 @@ export const updateTask = (missionId, taskId, updates) => {
   let newStatus = status !== undefined ? status : taskRow.status;
   let startedAt = taskRow.started_at;
   let completedAt = taskRow.completed_at;
+  let reviewedAt = taskRow.reviewed_at || null;
 
   // Quality gate: if task has a verificationCommand and status is being set to completed,
   // check the verification result
@@ -720,6 +733,21 @@ export const updateTask = (missionId, taskId, updates) => {
     }
   }
 
+  // Dual gate: if status is being set to completed and there is no verificationCommand,
+  // require current status === "reviewed" OR verificationResult with exitCode === 0
+  if (status === "completed" && !newVerificationCommand && !taskRow.verification_command) {
+    const hasPassingVerification = verificationResult && verificationResult.exitCode === 0;
+    const alreadyReviewed = taskRow.status === "reviewed";
+    if (!hasPassingVerification && !alreadyReviewed) {
+      return { task: null, missionAutoCompleted: false, unblockedTasks: [], autoObservations: [], reviewRequired: true };
+    }
+  }
+
+  // Track reviewed_at when status transitions to reviewed
+  if (status === "reviewed") {
+    reviewedAt = ts;
+  }
+
   if (status !== undefined) {
     if (status === "in_progress" && !startedAt) startedAt = ts;
     if (newStatus === "completed" && !completedAt) completedAt = ts;
@@ -728,9 +756,9 @@ export const updateTask = (missionId, taskId, updates) => {
   db.prepare(`
     UPDATE mission_tasks SET title = ?, description = ?, status = ?, phase = ?, assigned_agent = ?,
       session_id = ?, output = ?, blockers = ?, blocked_by = ?, verification_command = ?,
-      verification_result = ?, started_at = ?, completed_at = ?
+      verification_result = ?, started_at = ?, completed_at = ?, reviewed_at = ?
     WHERE id = ? AND mission_id = ?
-  `).run(newTitle, newDescription, newStatus, newPhase, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, newVerificationCommand, newVerificationResult, startedAt, completedAt, taskId, missionId);
+  `).run(newTitle, newDescription, newStatus, newPhase, newAgent, newSessionId, newOutput, newBlockers, newBlockedBy, newVerificationCommand, newVerificationResult, startedAt, completedAt, reviewedAt, taskId, missionId);
 
   // Auto-unblock dependents when a task completes
   const unblockedTasks = [];
@@ -784,10 +812,10 @@ export const getResumableMissions = (projectFilter) => {
 
   for (const row of missions) {
     const allTasks = db.prepare("SELECT * FROM mission_tasks WHERE mission_id = ? ORDER BY created_at").all(row.id).map(rowToTask);
-    const resumableTasks = allTasks.filter(t => ["pending", "in_progress", "blocked", "interrupted", "verification_failed"].includes(t.status));
+    const resumableTasks = allTasks.filter(t => ["pending", "in_progress", "reviewed", "blocked", "interrupted", "verification_failed"].includes(t.status));
     if (resumableTasks.length === 0) continue;
 
-    const counts = { pending: 0, in_progress: 0, completed: 0, blocked: 0, interrupted: 0, verification_failed: 0 };
+    const counts = { pending: 0, in_progress: 0, reviewed: 0, completed: 0, blocked: 0, interrupted: 0, verification_failed: 0 };
     for (const t of allTasks) counts[t.status] = (counts[t.status] || 0) + 1;
 
     // Include notes for resumability context
@@ -1149,6 +1177,77 @@ export const updateObservation = (experimentId, obsId, updates) => {
 export const deleteObservation = (experimentId, obsId) => {
   const db = getDb();
   const result = db.prepare("DELETE FROM observations WHERE id = ? AND experiment_id = ?").run(obsId, experimentId);
+  return result.changes > 0;
+};
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+export const createSkill = ({ name, type, content, project, tags }) => {
+  const db = getDb();
+  const ts = now();
+  const existingIds = new Set(db.prepare("SELECT id FROM skills").all().map(r => r.id));
+  const id = slugify(name, "sk", existingIds);
+  const proj = jsonStr(project ? (Array.isArray(project) ? project : [project]) : ["general"]);
+  const tagsStr = jsonStr(tags ? (Array.isArray(tags) ? tags : [tags]) : []);
+
+  db.prepare(`
+    INSERT INTO skills (id, name, type, content, project, tags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type || null, content, proj, tagsStr, ts, ts);
+
+  return rowToSkill(db.prepare("SELECT * FROM skills WHERE id = ?").get(id));
+};
+
+export const getSkills = (projectFilter, typeFilter) => {
+  const db = getDb();
+  let skills = db.prepare("SELECT * FROM skills ORDER BY created_at DESC").all().map(rowToSkill);
+
+  if (typeFilter) {
+    skills = skills.filter(s => s.type === typeFilter);
+  }
+
+  if (projectFilter) {
+    skills = skills.filter(s => (s.project || []).includes(projectFilter) || (s.project || []).includes("general"));
+  }
+
+  return skills;
+};
+
+export const getSkill = (id) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM skills WHERE id = ?").get(id);
+  return rowToSkill(row);
+};
+
+export const updateSkill = (id, updates) => {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM skills WHERE id = ?").get(id);
+  if (!row) return null;
+
+  const ts = now();
+  const newName = updates.name !== undefined ? updates.name : row.name;
+  const newType = updates.type !== undefined ? updates.type : row.type;
+  const newContent = updates.content !== undefined ? updates.content : row.content;
+  const newProject = updates.project !== undefined
+    ? jsonStr(Array.isArray(updates.project) ? updates.project : [updates.project])
+    : row.project;
+  const newTags = updates.tags !== undefined
+    ? jsonStr(Array.isArray(updates.tags) ? updates.tags : [updates.tags])
+    : row.tags;
+
+  db.prepare(`
+    UPDATE skills SET name = ?, type = ?, content = ?, project = ?, tags = ?, updated_at = ?
+    WHERE id = ?
+  `).run(newName, newType, newContent, newProject, newTags, ts, id);
+
+  return rowToSkill(db.prepare("SELECT * FROM skills WHERE id = ?").get(id));
+};
+
+export const deleteSkill = (id) => {
+  const db = getDb();
+  const result = db.prepare("DELETE FROM skills WHERE id = ?").run(id);
   return result.changes > 0;
 };
 
@@ -1724,6 +1823,36 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
     }
   }
 
+  // Skills
+  if (!profileFilter || profileFilter.sections.includes("skills")) {
+    let skills = db.prepare("SELECT * FROM skills").all().map(rowToSkill);
+    if (projectId) {
+      skills = skills.filter(s => (s.project || []).includes(projectId) || (s.project || []).includes("general"));
+    }
+    if (profileFilter && profileFilter.tags && profileFilter.tags.length > 0) {
+      const profileTagsLower = profileFilter.tags.map(t => t.toLowerCase());
+      skills = skills.filter(s => {
+        const skillTagsLower = (s.tags || []).map(t => String(t).toLowerCase());
+        if (skillTagsLower.some(st => profileTagsLower.includes(st))) return true;
+        const haystack = `${s.name || ""} ${s.content || ""}`.toLowerCase();
+        return profileTagsLower.some(tag => haystack.includes(tag));
+      });
+    }
+    if (skills.length) {
+      lines.push("## Skills");
+      for (const s of skills) {
+        if (compact) {
+          lines.push(`- ${s.name} (${s.type || "general"})`);
+        } else {
+          const preview = (s.content || "").slice(0, 200);
+          const ellipsis = (s.content || "").length > 200 ? "..." : "";
+          lines.push(`- ${s.name} (${s.type || "general"}): ${preview}${ellipsis}`);
+        }
+      }
+      lines.push("");
+    }
+  }
+
   // Reminders
   if (!profileFilter || profileFilter.sections.includes("reminders")) {
     const ts = now();
@@ -1793,7 +1922,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
 
   // Mission tasks
   if (mission) {
-    const statusIcon = { pending: "○", in_progress: "▶", completed: "✓", blocked: "✗", interrupted: "⏸" };
+    const statusIcon = { pending: "○", in_progress: "▶", reviewed: "◎", completed: "✓", blocked: "✗", interrupted: "⏸", verification_failed: "✕" };
     lines.push(`## Active Mission: ${mission.name}`);
     lines.push(`- **ID:** ${mission.id}`);
     lines.push(`- **Status:** ${mission.status}`);
@@ -1801,7 +1930,7 @@ export const getContextMarkdown = ({ projectId, missionId, profileId, format }) 
     lines.push("");
     lines.push("### Tasks");
     const missionTasks = compact
-      ? (mission.tasks || []).filter(t => t.status === "pending" || t.status === "in_progress" || t.status === "interrupted")
+      ? (mission.tasks || []).filter(t => t.status === "pending" || t.status === "in_progress" || t.status === "reviewed" || t.status === "interrupted")
       : (mission.tasks || []);
     for (const t of missionTasks) {
       const icon = statusIcon[t.status] || "?";

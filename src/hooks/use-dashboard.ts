@@ -23,6 +23,11 @@ export function useDashboard() {
     queryFn: () => api.getExperiments({ status: 'active' }),
   })
 
+  const skills = useQuery({
+    queryKey: ['skills', '', ''],
+    queryFn: () => api.listSkills(),
+  })
+
   const analytics = useQuery({
     queryKey: ['analytics', 30],
     queryFn: () => api.getAnalyticsSummary(30),
@@ -49,6 +54,7 @@ export function useDashboard() {
     sessions,
     reminders,
     experiments,
+    skills,
     analytics,
     metrics,
     watchers,

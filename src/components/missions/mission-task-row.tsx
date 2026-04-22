@@ -11,6 +11,7 @@ import type { Task } from '@/lib/types'
 const STATUS_BORDER_COLOR: Record<string, string> = {
   pending: 'border-l-[#9d9db5]',
   in_progress: 'border-l-brain-accent',
+  reviewed: 'border-l-brain-cyan',
   completed: 'border-l-brain-green',
   blocked: 'border-l-brain-amber',
   interrupted: 'border-l-brain-amber',
@@ -20,6 +21,7 @@ const STATUS_BORDER_COLOR: Record<string, string> = {
 const STATUS_TEXT_COLOR: Record<string, string> = {
   pending: 'text-muted-foreground',
   in_progress: 'text-brain-accent',
+  reviewed: 'text-brain-cyan',
   completed: 'text-brain-green',
   blocked: 'text-brain-amber',
   interrupted: 'text-brain-amber',
@@ -166,6 +168,11 @@ export function MissionTaskRow({ task, missionId, onUpdateTask }: MissionTaskRow
                 Block
               </Button>
             </>
+          )}
+          {task.status === 'reviewed' && (
+            <Button variant="ghost" size="xs" className="text-brain-green" onClick={() => handleStatusChange('completed')}>
+              Complete
+            </Button>
           )}
           {task.status === 'blocked' && (
             <Button variant="ghost" size="xs" className="text-brain-accent" onClick={() => handleStatusChange('in_progress')}>
