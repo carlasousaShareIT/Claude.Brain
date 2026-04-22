@@ -122,7 +122,7 @@ export function ExperimentsView() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 px-4 pt-3 pb-4">
           {/* Inline add form */}
           {showAdd && (
