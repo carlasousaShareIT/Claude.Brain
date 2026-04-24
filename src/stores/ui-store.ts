@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 
-export type DetailView = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'skills' | 'observer' | 'analytics';
+export type DetailView = 'neural' | 'metrics' | 'missions' | 'sessions' | 'reminders' | 'experiments' | 'skills' | 'observer' | 'analytics' | 'account';
 export type ActiveView = 'dashboard' | DetailView;
 
-const VALID_VIEWS: ActiveView[] = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'skills', 'observer', 'analytics'];
+const VALID_VIEWS: ActiveView[] = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'skills', 'observer', 'analytics', 'account'];
 
 function viewFromHash(): ActiveView {
   const hash = window.location.hash.replace('#', '');

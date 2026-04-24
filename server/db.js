@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { ulid } from "ulid";
 
 // Resolve database file path: env var > ~/.claude/brain.db
 const defaultDbFile = path.join(os.homedir(), ".claude", "brain.db");
@@ -694,11 +695,113 @@ const createSchema = (db) => {
     console.log("[brain-db] schema version updated to 2.4.0");
   }
 
+  // Schema migration: add users, api_tokens, web_sessions, project_shares tables + projects.owner_user_id (v2.5.0)
+  const usersTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+  if (!usersTableExists) {
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        must_change_password INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+        is_bootstrap INTEGER NOT NULL DEFAULT 0,
+        invited_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_seen_at TEXT
+      );
+      CREATE INDEX idx_users_email ON users(email);
+      CREATE INDEX idx_users_status ON users(status);
+
+      CREATE TABLE api_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token_prefix TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'user' CHECK (scope IN ('user','service')),
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_used_at TEXT
+      );
+      CREATE UNIQUE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
+      CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+      CREATE INDEX idx_api_tokens_prefix ON api_tokens(token_prefix);
+
+      CREATE TABLE web_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        user_agent TEXT,
+        ip TEXT
+      );
+      CREATE INDEX idx_web_sessions_user ON web_sessions(user_id);
+      CREATE INDEX idx_web_sessions_expires ON web_sessions(expires_at);
+
+      CREATE TABLE project_shares (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        permission TEXT NOT NULL DEFAULT 'read' CHECK (permission IN ('read','write')),
+        granted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (project_id, user_id)
+      );
+      CREATE INDEX idx_project_shares_user ON project_shares(user_id);
+    `);
+    console.log("[brain-db] migrated: added users, api_tokens, web_sessions, project_shares tables (v2.5.0)");
+  }
+
+  // Add owner_user_id to projects if missing (part of v2.5.0)
+  const projectCols250 = db.prepare("PRAGMA table_info(projects)").all().map(c => c.name);
+  if (!projectCols250.includes("owner_user_id")) {
+    db.exec("ALTER TABLE projects ADD COLUMN owner_user_id TEXT REFERENCES users(id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_user_id)");
+    console.log("[brain-db] migrated projects: added owner_user_id column (v2.5.0)");
+  }
+
+  if (!usersTableExists || !projectCols250.includes("owner_user_id")) {
+    db.prepare("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("schema_version", "2.5.0");
+    console.log("[brain-db] schema version updated to 2.5.0");
+  }
+
   // Ensure default "general" project exists
   const generalProject = db.prepare("SELECT id FROM projects WHERE id = 'general'").get();
   if (!generalProject) {
     db.prepare("INSERT INTO projects (id, name, repos, status) VALUES (?, ?, ?, ?)").run("general", "General", "[]", "active");
   }
+};
+
+// Bootstrap: run once after migration when users table is empty.
+// Exported as async because argon2.hash is async.
+export const runBootstrap = async () => {
+  const instance = getDb();
+  const existing = instance.prepare("SELECT id FROM users LIMIT 1").get();
+  if (existing) return; // already bootstrapped
+
+  const password = process.env.BRAIN_BOOTSTRAP_PASSWORD;
+  if (!password) {
+    console.error("[brain-db] FATAL: users table is empty and BRAIN_BOOTSTRAP_PASSWORD is not set. Cannot bootstrap. Exiting.");
+    process.exit(1);
+  }
+
+  const { hashPassword } = await import("./auth-utils.js");
+  const hash = await hashPassword(password);
+  const id = ulid();
+  const email = process.env.BRAIN_BOOTSTRAP_EMAIL || "cs@cludo.com";
+  const displayName = process.env.BRAIN_BOOTSTRAP_DISPLAY_NAME || "Carla";
+
+  instance.prepare(`
+    INSERT INTO users (id, email, display_name, password_hash, must_change_password, status, is_bootstrap)
+    VALUES (?, ?, ?, ?, 0, 'active', 1)
+  `).run(id, email, displayName, hash);
+
+  // Backfill projects.owner_user_id for all NULL rows
+  instance.prepare("UPDATE projects SET owner_user_id = ? WHERE owner_user_id IS NULL").run(id);
+
+  console.log(`[brain-db] bootstrap user created: ${email} (id=${id}). projects backfilled.`);
 };
 
 // Backup: copy db to .bak with rotation

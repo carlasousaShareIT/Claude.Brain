@@ -2,22 +2,31 @@ import { useEffect } from 'react'
 import { Terminal, X } from 'lucide-react'
 import { useSSE } from '@/hooks/use-sse'
 import { useUIStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/lib/auth-store'
 import { Sidebar } from '@/components/layout/sidebar'
 import { MainPanel } from '@/components/layout/main-panel'
 import { CommandPanel } from '@/components/layout/command-panel'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
+import { LoginView } from '@/views/login'
 
 import type { ActiveView } from '@/stores/ui-store'
 
-const VALID_VIEWS = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics'] as const
+const VALID_VIEWS = ['dashboard', 'neural', 'metrics', 'missions', 'sessions', 'reminders', 'experiments', 'observer', 'analytics', 'account'] as const
 
 function App() {
   useSSE()
   const serverLive = useUIStore((s) => s.serverLive)
   const commandPanelOpen = useUIStore((s) => s.commandPanelOpen)
   const setCommandPanelOpen = useUIStore((s) => s.setCommandPanelOpen)
+  const user = useAuthStore((s) => s.user)
+  const loading = useAuthStore((s) => s.loading)
+  const loadUser = useAuthStore((s) => s.loadUser)
+
+  useEffect(() => {
+    loadUser()
+  }, [loadUser])
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -31,6 +40,22 @@ function App() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-brain-base">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginView />
+  }
+
+  if (user.mustChangePassword) {
+    return <LoginView initialMode="change-password" />
+  }
 
   return (
     <TooltipProvider>

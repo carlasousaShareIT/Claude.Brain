@@ -22,6 +22,7 @@ export default defineConfig({
       '/audit': 'http://localhost:7777',
       '/observer': 'http://localhost:7777',
       '/analytics': 'http://localhost:7777',
+      '/auth': 'http://localhost:7777',
     },
   },
 })

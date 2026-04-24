@@ -12,6 +12,7 @@ import { SkillsView } from '@/components/skills/skills-view'
 import { ObserverView } from '@/components/observer/observer-view'
 import { ObserverStrip } from '@/components/observer/observer-strip'
 import { AnalyticsView } from '@/components/analytics/analytics-view'
+import { AccountView } from '@/views/account'
 
 export function MainPanel() {
   const activeView = useUIStore((s) => s.activeView)
@@ -33,6 +34,7 @@ export function MainPanel() {
         {activeView === 'skills' && <SkillsView />}
         {activeView === 'observer' && <ObserverView />}
         {activeView === 'analytics' && <AnalyticsView />}
+        {activeView === 'account' && <AccountView />}
       </div>
     </div>
   )

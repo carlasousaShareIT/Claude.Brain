@@ -43,6 +43,13 @@ class ApiError extends Error {
   }
 }
 
+class AuthRequiredError extends Error {
+  constructor() {
+    super('Authentication required');
+    this.name = 'AuthRequiredError';
+  }
+}
+
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string>),
@@ -55,11 +62,18 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...options,
     headers,
+    credentials: 'include',
     body:
       options?.body && typeof options.body === 'object' && !(options.body instanceof FormData)
         ? JSON.stringify(options.body)
         : options?.body,
   });
+
+  if (res.status === 401) {
+    const { useAuthStore } = await import('@/lib/auth-store');
+    useAuthStore.getState().clearUser();
+    throw new AuthRequiredError();
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -383,4 +397,4 @@ export const api = {
     apiFetch<AnalyticsSummary>(`/analytics/summary${qs({ limit: limit?.toString() })}`),
 };
 
-export { ApiError };
+export { ApiError, AuthRequiredError };

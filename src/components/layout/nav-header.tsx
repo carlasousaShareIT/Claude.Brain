@@ -11,6 +11,7 @@ const VIEWS: { key: DetailView; label: string }[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'observer', label: 'Observer' },
   { key: 'neural', label: 'Neural Map' },
+  { key: 'account', label: 'Account' },
 ]
 
 export function NavHeader() {

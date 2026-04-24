@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 
 import { startHeartbeat } from "./broadcast.js";
 import { mergeBrains } from "./merge-utils.js";
-import { getDb, DB_FILE, backupDb, startBackupSchedule, closeDb } from "./db.js";
+import { getDb, DB_FILE, backupDb, startBackupSchedule, closeDb, runBootstrap } from "./db.js";
 import { migrateJsonToDb } from "./migrate-json-to-db.js";
 import { getFullBrain } from "./db-store.js";
 
@@ -32,6 +32,9 @@ import analyticsRouter from "./routes/analytics.js";
 import { startAuditSchedule, stopAuditSchedule } from "./brain-audit.js";
 import { cleanup as cleanupObserver } from "./observer/watcher.js";
 import { startDirectoryWatcher, stopDirectoryWatcher } from "./observer/directory-watcher.js";
+import cookieParser from "cookie-parser";
+import { authMiddleware } from "./middleware/auth.js";
+import authRouter from "./routes/auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 7777;
@@ -48,13 +51,16 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (e.g. same-origin, curl, server-to-server)
     if (!origin) return callback(null, true);
-    // Allow any localhost or 127.0.0.1 origin on any port
-    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    // Allow localhost, 127.0.0.1, and private LAN ranges (10/8, 192.168/16, 172.16-31/12) on any port
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin);
     if (isLocal) return callback(null, true);
     callback(new Error("CORS: origin not allowed"));
   },
+  credentials: true,
 }));
 app.use(express.json());
+app.use(cookieParser());
+app.use(authMiddleware);
 
 // Serve React app in production, dev message otherwise
 app.get("/", (req, res) => {
@@ -71,6 +77,7 @@ app.get("/", (req, res) => {
 });
 
 // Mount route modules
+app.use("/auth", authRouter);
 app.use(memoryRouter);
 app.use(archiveRouter);
 app.use(metricsRouter);
@@ -138,11 +145,19 @@ startHeartbeat();
 // Start brain audit schedule
 startAuditSchedule();
 
-// Graceful shutdown
+// Graceful shutdown — registered before listen so they're in place even if bootstrap fails
 process.on("SIGINT", () => { stopDirectoryWatcher(); cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
 process.on("SIGTERM", () => { stopDirectoryWatcher(); cleanupObserver(); stopAuditSchedule(); closeDb(); process.exit(0); });
 
-app.listen(PORT, () => {
+(async () => {
+  try {
+    await runBootstrap();
+  } catch (err) {
+    console.error("[brain] bootstrap failed:", err.message);
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
   console.log(`\n🧠 Brain server running at http://localhost:${PORT}`);
   console.log(`   Database:   ${DB_FILE}`);
   console.log(`   UI:         http://localhost:${PORT}`);
@@ -213,4 +228,5 @@ app.listen(PORT, () => {
 
   // Start directory watcher failsafe for agent JSONL discovery
   startDirectoryWatcher();
-});
+  });
+})();

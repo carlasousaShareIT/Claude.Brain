@@ -56,6 +56,11 @@ const HELP_CONTENT: Record<DetailView, TabHelpContent> = {
     claudeUses: 'The /analytics/summary endpoint aggregates compliance, violations, and time data across recent sessions. Claude records observations to the active preparation-discipline experiment after each session.',
     howToRead: 'Compliance scorecard shows gate pass rates with a trend sparkline. Red gates need attention. Violation feed highlights sessions with spiral or stuck patterns. Project split shows meta-work vs product-work ratio. Experiment cards track observation trends.',
   },
+  account: {
+    purpose: 'Manage your profile, API tokens, and team members.',
+    claudeUses: 'Agents use API tokens minted here to authenticate with the brain server via Authorization: Bearer headers.',
+    howToRead: 'Profile section for display name, email, and password changes. Tokens section lists active keys — mint new ones and revoke old ones. Team section (owner only) lets you invite users and manage their access.',
+  },
 }
 
 export function TabHelp() {
