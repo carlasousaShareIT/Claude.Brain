@@ -1,7 +1,7 @@
 // routes/sessions.js — structured session lifecycle tracking
 
 import { Router } from "express";
-import { startSession, endSession, updateSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, getSessionsHealth, getSessionHealth, heartbeatSession } from "../db-store.js";
+import { startSession, endSession, updateSession, updateSessionHandoff, getSessionById, listSessions, getLatestHandoff, searchSessions, getSessionCompliance, recordSessionActivity, validateSessionOwnership, getSessionsHealth, getSessionHealth, heartbeatSession } from "../db-store.js";
 import { broadcastEvent } from "../broadcast.js";
 import { unwatchAllForSession } from "../observer/watcher.js";
 
@@ -105,7 +105,14 @@ router.post("/:id/activity", (req, res) => {
   if (!type) return res.status(400).json({ error: "Missing type" });
   const validTypes = ["brain_query", "brain_write", "profile_inject", "reviewer_run", "agent_spawn", "commit"];
   if (!validTypes.includes(type)) return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
-  recordSessionActivity(req.params.id, type, details || null);
+  try {
+    const v = validateSessionOwnership(req.params.id, req.user?.id, !!req.user?.isBootstrap);
+    if (!v.valid) {
+      console.warn(`[brain] skipping session_activity write for ${req.params.id}: ${v.reason}`);
+    } else {
+      recordSessionActivity(req.params.id, type, details || null);
+    }
+  } catch {}
   res.json({ ok: true });
 });
 

@@ -7,6 +7,7 @@ import {
   getContextMarkdown,
   getResumableMissions,
   recordSessionActivity,
+  validateSessionOwnership,
   getSessionCompliance,
   getSessionById,
 } from "../db-store.js";
@@ -177,7 +178,14 @@ router.post("/startup", (req, res) => {
   });
 
   // 4. Record brain_query activity
-  recordSessionActivity(sessionId, "brain_query", "startup");
+  try {
+    const v = validateSessionOwnership(sessionId, req.user?.id, !!req.user?.isBootstrap);
+    if (!v.valid) {
+      console.warn(`[brain] skipping session_activity write for ${sessionId}: ${v.reason}`);
+    } else {
+      recordSessionActivity(sessionId, "brain_query", "startup");
+    }
+  } catch {}
 
   // 5. Get resumable missions
   const resumable = getResumableMissions(project || undefined);

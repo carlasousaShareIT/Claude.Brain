@@ -3266,6 +3266,29 @@ export const listAgentMetrics = ({ sessionId, agentName, missionId, limit } = {}
   return db.prepare(sql).all(...params).map(rowToAgentMetrics);
 };
 
+export const getSessionOwnerUserId = (sessionId) => {
+  const db = getDb();
+  try {
+    const row = db.prepare("SELECT owner_user_id FROM sessions WHERE id = ?").get(sessionId);
+    return row ? row.owner_user_id : null;
+  } catch {
+    // owner_user_id column doesn't exist yet (schema pre-v2.6.0 / Phase 2).
+    // Fall back to fail-open until the migration lands.
+    return null;
+  }
+};
+
+// Returns { valid: true } if the sessionId can be used by this caller.
+// Returns { valid: false, reason } if the session row exists with a different owner.
+// If the session row does not exist (new session not yet registered), returns valid.
+export const validateSessionOwnership = (sessionId, userId, isBootstrap) => {
+  if (isBootstrap) return { valid: true };
+  const ownerId = getSessionOwnerUserId(sessionId);
+  if (ownerId === null) return { valid: true };
+  if (ownerId !== userId) return { valid: false, reason: "session_owner_mismatch" };
+  return { valid: true };
+};
+
 export const getAgentMetricsSummary = ({ agentName } = {}) => {
   const db = getDb();
   let sql = `

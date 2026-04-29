@@ -11,6 +11,7 @@ import {
   checkConflicts, diffEntries, retagEntry, checkHealth,
   getWebhooks,
   recordSessionActivity,
+  validateSessionOwnership,
 } from "../db-store.js";
 import { detectSection } from "../entry-utils.js";
 import { fireWebhooks, broadcastEvent } from "../broadcast.js";
@@ -85,7 +86,14 @@ router.post("/memory", (req, res) => {
 
     // Record brain_write activity
     if (req.body.sessionId) {
-      try { recordSessionActivity(req.body.sessionId, "brain_write", result.section); } catch {}
+      try {
+        const v = validateSessionOwnership(req.body.sessionId, req.user?.id, !!req.user?.isBootstrap);
+        if (!v.valid) {
+          console.warn(`[brain] skipping session_activity write for ${req.body.sessionId}: ${v.reason}`);
+        } else {
+          recordSessionActivity(req.body.sessionId, "brain_write", result.section);
+        }
+      } catch {}
     }
 
     res.json({ ok: true });
@@ -134,7 +142,14 @@ router.post("/memory/batch", (req, res) => {
   // After processing all operations, record brain_write
   const firstSessionId = operations.find(op => op.sessionId)?.sessionId;
   if (firstSessionId) {
-    try { recordSessionActivity(firstSessionId, "brain_write", "batch"); } catch {}
+    try {
+      const v = validateSessionOwnership(firstSessionId, req.user?.id, !!req.user?.isBootstrap);
+      if (!v.valid) {
+        console.warn(`[brain] skipping session_activity write for ${firstSessionId}: ${v.reason}`);
+      } else {
+        recordSessionActivity(firstSessionId, "brain_write", "batch");
+      }
+    } catch {}
   }
 
   res.json({ ok: errors.length === 0, results, errors });
@@ -156,7 +171,14 @@ router.get("/memory/search", (req, res) => {
 
   // Record brain_query activity if sessionId provided
   if (sessionId) {
-    try { recordSessionActivity(sessionId, "brain_query", `search: ${q}`); } catch {}
+    try {
+      const v = validateSessionOwnership(sessionId, req.user?.id, !!req.user?.isBootstrap);
+      if (!v.valid) {
+        console.warn(`[brain] skipping session_activity write for ${sessionId}: ${v.reason}`);
+      } else {
+        recordSessionActivity(sessionId, "brain_query", `search: ${q}`);
+      }
+    } catch {}
   }
 
   res.json(searchEntries(q, projectId || undefined));
@@ -270,7 +292,14 @@ router.get("/memory/context", (req, res) => {
 
   // Record brain_query activity if sessionId provided
   if (sessionId) {
-    try { recordSessionActivity(sessionId, "brain_query", "context"); } catch {}
+    try {
+      const v = validateSessionOwnership(sessionId, req.user?.id, !!req.user?.isBootstrap);
+      if (!v.valid) {
+        console.warn(`[brain] skipping session_activity write for ${sessionId}: ${v.reason}`);
+      } else {
+        recordSessionActivity(sessionId, "brain_query", "context");
+      }
+    } catch {}
   }
 
   // Check for error objects returned by db-store

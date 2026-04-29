@@ -17,6 +17,7 @@ import {
   listAgentMetrics,
   getAgentMetricsSummary,
   recordSessionActivity,
+  validateSessionOwnership,
 } from "../db-store.js";
 import { getDb } from "../db.js";
 import { broadcastEvent } from "../broadcast.js";
@@ -40,7 +41,14 @@ router.post("/agent-started", (req, res) => {
 
   // Record agent_spawn activity
   if (sessionId) {
-    try { recordSessionActivity(sessionId, "agent_spawn", agentType || agentId || "unknown"); } catch {}
+    try {
+      const v = validateSessionOwnership(sessionId, req.user?.id, !!req.user?.isBootstrap);
+      if (!v.valid) {
+        console.warn(`[brain] skipping session_activity write for ${sessionId}: ${v.reason}`);
+      } else {
+        recordSessionActivity(sessionId, "agent_spawn", agentType || agentId || "unknown");
+      }
+    } catch {}
   }
 
   console.log(`[observer] agent started: ${agentId} (${agentType || "unknown"}) in session ${sessionId}`);
@@ -79,7 +87,14 @@ router.post("/agent-stopped", (req, res) => {
 
   // Record reviewer_run if agent type matches
   if (sessionId && agentType && /review/i.test(agentType)) {
-    try { recordSessionActivity(sessionId, "reviewer_run", agentId || agentType); } catch {}
+    try {
+      const v = validateSessionOwnership(sessionId, req.user?.id, !!req.user?.isBootstrap);
+      if (!v.valid) {
+        console.warn(`[brain] skipping session_activity write for ${sessionId}: ${v.reason}`);
+      } else {
+        recordSessionActivity(sessionId, "reviewer_run", agentId || agentType);
+      }
+    } catch {}
   }
 
   console.log(`[observer] agent stopped: ${agentId || "unknown"} (${agentType || "unknown"}) in session ${sessionId}`);
