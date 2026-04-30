@@ -142,6 +142,27 @@ router.post("/startup", (req, res) => {
   const { sessionId, label, project } = req.body;
   if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
 
+  // Overwrite guard — reject if session already active (tool_call_count >= 3, not ended)
+  const existing = getSessionById(sessionId);
+  const isActive = existing && (existing.tool_call_count || 0) >= 3 && !existing.ended_at;
+  if (isActive && req.body.force !== true) {
+    return res.status(409).json({
+      error: "registration_conflict",
+      message: `Session ${sessionId} already active (tool_call_count=${existing.tool_call_count}, ended_at=null). Use force:true to override.`,
+      existing: {
+        sessionId,
+        label: existing.label,
+        project: existing.project,
+        started_at: existing.started_at,
+        tool_call_count: existing.tool_call_count,
+        ended_at: null,
+      },
+    });
+  }
+  if (isActive && req.body.force === true) {
+    console.warn(`[brain] session:startup OVERWRITE force=true ${sessionId} prev=(label="${existing.label}" project="${existing.project}" toolCalls=${existing.tool_call_count}) new=(label="${label}" project="${project}")`);
+  }
+
   // 1. Register session
   const session = startSession({ id: sessionId, label, project });
   broadcastEvent("session:start", { id: sessionId, label, project, ts: new Date().toISOString() });

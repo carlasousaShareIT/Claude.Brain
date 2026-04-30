@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "start": "node server/index.js",
     "lint": "eslint .",
+    "test:startup-guard": "node server/scripts/test-startup-guard.js",
     "preview": "vite build && node server/index.js"
   },
   "dependencies": {
